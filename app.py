@@ -1,9 +1,12 @@
 import csv
 import io
 import json
+import logging
 import os
 import sqlite3
 import time
+
+logging.basicConfig(level=logging.INFO)
 
 import anthropic
 from flask import Flask, Response, jsonify, render_template, request
@@ -174,7 +177,7 @@ def discover():
         return jsonify({"error": "No se encontraron subcategorías para analizar."}), 404
 
     subcats_with_data = []
-    for sc in subcats[:15]:
+    for sc in subcats[:8]:
         metrics = sample_subcategory(sc["id"])
         if metrics:
             subcats_with_data.append({

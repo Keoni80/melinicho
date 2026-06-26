@@ -1,6 +1,9 @@
+import logging
 import os
 import time
 import requests
+
+log = logging.getLogger(__name__)
 
 BASE_URL = "https://api.mercadolibre.com"
 _ENV_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
@@ -98,7 +101,8 @@ def _headers():
 
 def _get(url, **kwargs):
     resp = requests.get(url, headers=_headers(), **kwargs)
-    if resp.status_code == 401 and _refresh_token():
+    if resp.status_code in (401, 403) and _refresh_token():
+        log.info("Token refreshed, retrying %s", url)
         resp = requests.get(url, headers=_headers(), **kwargs)
     return resp
 
@@ -156,37 +160,66 @@ def get_subcategories(category_id):
         resp.raise_for_status()
         data = resp.json()
         children = data.get("children_categories", [])
+        log.info("get_subcategories %s → %d children", category_id, len(children))
         return [{"id": c["id"], "name": c["name"], "total_items_in_this_category": c.get("total_items_in_this_category", 0)} for c in children]
-    except Exception:
+    except Exception as e:
+        log.error("get_subcategories %s failed: %s", category_id, e)
         return []
 
 
-def sample_subcategory(category_id, limit=20):
-    params = {"category": category_id, "limit": limit, "offset": 0}
+def sample_subcategory(category_id, limit=5):
+    path = f"/highlights/MLA/category/{category_id}"
     try:
-        resp = _get(f"{BASE_URL}/sites/MLA/search", params=params, timeout=15)
-        if resp.status_code == 403:
-            return None
+        resp = _get(f"{BASE_URL}{path}", timeout=10)
         resp.raise_for_status()
-        data = resp.json()
-        results = data.get("results", [])
-        total = data.get("paging", {}).get("total", 0)
-        items = [_parse_item(r) for r in results]
-        sellers = {i["seller_id"] for i in items if i.get("seller_id")}
-        prices = [i["price"] for i in items if i.get("price", 0) > 0]
-        sold = [i.get("sold_quantity", 0) for i in items]
-        return {
-            "total_listings": total,
-            "sampled": len(items),
-            "unique_sellers": len(sellers),
-            "avg_price": round(sum(prices) / len(prices), 2) if prices else 0,
-            "median_price": round(sorted(prices)[len(prices) // 2], 2) if prices else 0,
-            "avg_sold": round(sum(sold) / len(sold), 1) if sold else 0,
-            "max_sold": max(sold) if sold else 0,
-            "top_items": [{"title": i["title"], "price": i["price"], "sold_quantity": i["sold_quantity"], "seller_name": i["seller_name"]} for i in sorted(items, key=lambda x: x.get("sold_quantity", 0), reverse=True)[:5]],
-        }
-    except Exception:
+        content = resp.json().get("content", [])
+    except Exception as e:
+        log.error("sample_subcategory highlights %s failed: %s", category_id, e)
         return None
+
+    product_ids = [item["id"] for item in content[:limit]]
+    if not product_ids:
+        return None
+
+    items = []
+    for pid in product_ids:
+        try:
+            r_prod = _get(f"{BASE_URL}/products/{pid}", timeout=8)
+            if not r_prod.ok:
+                continue
+            prod = r_prod.json()
+
+            r_listing = _get(f"{BASE_URL}/products/{pid}/items", params={"limit": 1}, timeout=8)
+            if not r_listing.ok:
+                continue
+            results = r_listing.json().get("results", [])
+            if not results:
+                continue
+            listing = results[0]
+
+            items.append({
+                "title": prod.get("name", ""),
+                "price": listing.get("price", 0) or 0,
+                "sold_quantity": 0,
+                "seller_id": str(listing.get("seller_id", "")),
+                "seller_name": "",
+            })
+        except Exception:
+            continue
+
+    if not items:
+        return None
+
+    sellers = {i["seller_id"] for i in items if i.get("seller_id")}
+    prices = [i["price"] for i in items if i.get("price", 0) > 0]
+
+    return {
+        "sampled": len(items),
+        "unique_sellers": len(sellers),
+        "avg_price": round(sum(prices) / len(prices), 2) if prices else 0,
+        "median_price": round(sorted(prices)[len(prices) // 2], 2) if prices else 0,
+        "top_items": [{"title": i["title"], "price": i["price"]} for i in items[:5]],
+    }
 
 
 def _parse_item(raw):
