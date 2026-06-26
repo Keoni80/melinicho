@@ -52,20 +52,6 @@ def index():
     return render_template("index.html")
 
 
-@app.route("/api/debug-token")
-def debug_token():
-    import meli_api, requests as req
-    token = meli_api._access_token or ""
-    r = req.get("https://api.mercadolibre.com/highlights/MLA/category/MLA1051",
-                headers=meli_api._headers(), timeout=8)
-    meli_vars = [k for k in os.environ if "MELI" in k or "ANTHROPIC" in k]
-    return jsonify({
-        "token_loaded": bool(token),
-        "token_last4": token[-4:] if token else None,
-        "highlights_status": r.status_code,
-        "env_keys_found": meli_vars,
-    })
-
 
 @app.route("/api/categories")
 def categories():
