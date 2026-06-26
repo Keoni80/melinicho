@@ -127,6 +127,8 @@ def search_meli(query="", category_id="", max_results=100):
         try:
             resp = _get(f"{BASE_URL}/sites/MLA/search", params=params, timeout=15)
             if resp.status_code == 403:
+                if not category_id:
+                    return {"error": "La búsqueda por keyword no está disponible desde este servidor. Seleccioná una categoría para ver productos destacados."}
                 return _highlights_fallback(category_id, max_results)
             resp.raise_for_status()
             data = resp.json()
