@@ -291,19 +291,24 @@ def sample_subcategory(category_id, limit=5):
 
 
 def search_alibaba(query, limit=20):
+    import re as _re
     token = os.environ.get("APIFY_API_TOKEN")
     if not token or not query:
         return []
+    search_url = f"https://www.alibaba.com/trade/search?SearchText={requests.utils.quote(query)}"
     log.info("Searching Alibaba via Apify: '%s'", query)
     try:
         resp = requests.post(
-            "https://api.apify.com/v2/acts/simpleapi~alibaba-listings-scraper/run-sync-get-dataset-items",
+            "https://api.apify.com/v2/acts/scraperx~alibaba-scraper/run-sync-get-dataset-items",
             params={"token": token},
-            json={"urls": [query], "limit": limit},
+            json={"urls": [search_url], "maxItems": limit},
             timeout=160,
         )
         resp.raise_for_status()
         data = resp.json()
+        if not isinstance(data, list):
+            log.error("Alibaba Apify unexpected response: %s", data)
+            return []
         log.info("Alibaba Apify returned %d items", len(data))
         return data
     except Exception as e:
@@ -322,44 +327,50 @@ def _parse_alibaba_price(price_str):
     return min(nums), max(nums)
 
 
-def _title_match_score(meli_title, ali_title):
-    stop = {"de", "en", "para", "con", "el", "la", "los", "las", "un", "una",
-            "y", "a", "por", "del", "al", "se", "su", "lo", "le", "es", "no", "si"}
-    mt = {w.lower() for w in meli_title.split() if len(w) > 2 and w.lower() not in stop}
-    at = {w.lower() for w in ali_title.split() if len(w) > 2 and w.lower() not in stop}
-    if not mt:
-        return 0.0
-    return len(mt & at) / len(mt)
+def _strip_html(text):
+    import re
+    return re.sub(r"<[^>]+>", "", text or "")
 
 
-def enrich_with_alibaba(items, alibaba_raw):
+def _fix_ali_url(url):
+    if not url:
+        return ""
+    if url.startswith("//"):
+        return "https:" + url
+    return url
+
+
+def enrich_with_alibaba(items, alibaba_raw, query=""):
+    import re
     parsed = []
     for a in alibaba_raw:
         pmin, pmax = _parse_alibaba_price(a.get("price", ""))
+        if pmin is None:
+            continue
         parsed.append({
-            "title": a.get("title", ""),
+            "title": _strip_html(a.get("title", "")),
             "price_min": pmin,
             "price_max": pmax,
-            "url": a.get("productUrl", ""),
+            "url": _fix_ali_url(a.get("productUrl", "")),
+            "moq": a.get("moq", ""),
         })
 
-    for item in items:
-        best_score = 0.0
-        best = None
-        for a in parsed:
-            score = _title_match_score(item.get("title", ""), a["title"])
-            if score > best_score:
-                best_score = score
-                best = a
-
-        if best_score >= 0.25 and best and best["price_min"] is not None:
-            item["alibaba_price_min"] = best["price_min"]
-            item["alibaba_price_max"] = best["price_max"]
-            item["alibaba_url"] = best["url"]
-        else:
+    if not parsed:
+        for item in items:
             item["alibaba_price_min"] = None
             item["alibaba_price_max"] = None
             item["alibaba_url"] = None
+        return items
+
+    # Global range across all Alibaba results for this keyword
+    global_min = min(p["price_min"] for p in parsed)
+    global_max = max(p["price_max"] for p in parsed)
+    ali_search_url = f"https://www.alibaba.com/trade/search?SearchText={requests.utils.quote(query)}"
+
+    for item in items:
+        item["alibaba_price_min"] = global_min
+        item["alibaba_price_max"] = global_max
+        item["alibaba_url"] = ali_search_url
 
     return items
 

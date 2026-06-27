@@ -162,7 +162,7 @@ def search():
     if query:
         alibaba_raw = search_alibaba(query)
         if alibaba_raw:
-            items = enrich_with_alibaba(items, alibaba_raw)
+            items = enrich_with_alibaba(items, alibaba_raw, query=query)
 
     max_sellers = filters.get("max_sellers")
     if max_sellers and niche_stats.get("unique_sellers", 0) > int(max_sellers):
