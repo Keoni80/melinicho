@@ -155,18 +155,18 @@ def _search_apify(query="", category_id="", max_results=100):
             price = 0
         envio = str(r.get("Envio", "")).lower()
         items.append({
-            "id": r.get("produtoCategoryID", ""),
+            "id": r.get("SKU", ""),
             "title": r.get("articuloTitulo", ""),
             "price": price,
             "currency": r.get("Moneda", "ARS"),
             "sold_quantity": 0,
             "available_quantity": 0,
             "condition": "",
-            "seller_id": "",
-            "seller_name": r.get("articuloVendedor", ""),
+            "seller_id": r.get("sellerID", ""),
+            "seller_name": r.get("Vendedor", "") or r.get("productoMarca", ""),
             "seller_level": "",
-            "free_shipping": "gratis" in envio or "free" in envio,
-            "permalink": r.get("articuloLink", ""),
+            "free_shipping": "gratis" in envio or "free" in envio or "full" in envio,
+            "permalink": r.get("zdireccion", ""),
             "thumbnail": r.get("imgDireccion", ""),
             "listing_type": "",
         })
