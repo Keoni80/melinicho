@@ -173,7 +173,6 @@ function renderItemsTable(items) {
             <td>${item.free_shipping
                 ? '<span class="badge free">Gratis</span>'
                 : '<span class="badge paid">Pago</span>'}</td>
-            <td class="price">${fmtAliPrice(item.alibaba_price_min, item.alibaba_price_max, item.alibaba_url)}</td>
             <td><span class="score-badge ${scoreClass(item.opportunity_score)}">${item.opportunity_score}</span></td>
         </tr>
     `).join('');
@@ -346,14 +345,6 @@ function scoreClass(s) {
     if (s >= 70) return 'score-high';
     if (s >= 40) return 'score-med';
     return 'score-low';
-}
-
-function fmtAliPrice(min, max, url) {
-    if (min == null) return '<span style="color:var(--muted)">—</span>';
-    const hi = (max != null && max !== min) ? max : null;
-    const range = hi ? `$${min.toFixed(2)} – $${hi.toFixed(2)}` : `$${min.toFixed(2)}`;
-    if (url) return `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer" class="ali-link">${range}</a>`;
-    return `<span class="ali-link">${range}</span>`;
 }
 
 function fmtPrice(p) {
