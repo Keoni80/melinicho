@@ -150,6 +150,9 @@ def _search_apify(query="", category_id="", max_results=100):
         return None
 
     log.info("Apify returned %d items", len(data))
+    if data:
+        log.info("DEBUG first item keys: %s", list(data[0].keys()))
+        log.info("DEBUG first item: %s", data[0])
     items = []
     for r in data:
         url = r.get("url", "")
