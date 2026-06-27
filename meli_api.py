@@ -126,7 +126,7 @@ def _search_apify(query="", category_id="", max_results=100):
     if not query:
         return None
 
-    max_pages = max(1, max_results // 48)
+    max_pages = 1
     log.info("Falling back to Apify scraper: keyword='%s', maxPages=%d", query, max_pages)
     try:
         resp = requests.post(
@@ -137,7 +137,7 @@ def _search_apify(query="", category_id="", max_results=100):
                 "country": "https://listado.mercadolibre.com.ar/",
                 "maxPages": max_pages,
             },
-            timeout=120,
+            timeout=160,
         )
         resp.raise_for_status()
         data = resp.json()
