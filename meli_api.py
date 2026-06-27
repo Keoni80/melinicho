@@ -126,50 +126,49 @@ def _search_apify(query="", category_id="", max_results=100):
     if not query:
         return None
 
-    log.info("Apify scraper: keyword='%s', max=%d", query, max_results)
+    log.info("Apify scraper: keyword='%s'", query)
     try:
         resp = requests.post(
-            "https://api.apify.com/v2/acts/sheshinmcfly~mercadolibre-scraper/run-sync-get-dataset-items",
+            "https://api.apify.com/v2/acts/karamelo~mercadolibre-scraper-espanol-castellano/run-sync-get-dataset-items",
             params={"token": token},
             json={
-                "mode": "search",
-                "searchTerms": [query],
-                "countries": ["AR"],
-                "maxResultsPerSearch": min(max_results, 30),
-                "sortBy": "relevance",
-                "fetchDetails": True,
+                "keyword": query,
+                "country": "https://listado.mercadolibre.com.ar/",
+                "maxPages": 1,
             },
             timeout=160,
         )
         resp.raise_for_status()
         data = resp.json()
-        if not isinstance(data, list):
-            log.error("Apify unexpected response: %s", data)
-            return None
     except Exception as e:
         log.error("Apify search failed: %s", e)
         return None
 
-    log.info("Apify returned %d items. First: %s", len(data), data[0] if data else "EMPTY")
+    log.info("Apify returned %d items", len(data))
     items = []
     for r in data:
+        price_str = r.get("nuevoPrecio", "0") or "0"
+        try:
+            price = float(str(price_str).replace(".", "").replace(",", "."))
+        except (ValueError, TypeError):
+            price = 0
+        envio = str(r.get("Envio", "")).lower()
         items.append({
-            "id": r.get("id", ""),
-            "title": r.get("title", ""),
-            "price": float(r.get("price", 0) or 0),
-            "currency": r.get("currency", "ARS"),
-            "sold_quantity": int(r.get("soldQuantity", 0) or 0),
-            "available_quantity": int(r.get("availableQuantity", 0) or 0),
-            "condition": r.get("condition", ""),
-            "seller_id": "",
-            "seller_name": r.get("sellerName", ""),
-            "seller_level": "official" if r.get("officialStore") else "",
-            "free_shipping": bool(r.get("freeShipping", False)),
-            "permalink": r.get("url", ""),
-            "thumbnail": r.get("thumbnail", ""),
+            "id": r.get("SKU", ""),
+            "title": r.get("articuloTitulo", ""),
+            "price": price,
+            "currency": r.get("Moneda", "ARS"),
+            "sold_quantity": 0,
+            "available_quantity": 0,
+            "condition": "",
+            "seller_id": r.get("sellerID", ""),
+            "seller_name": r.get("Vendedor", "") or r.get("productoMarca", ""),
+            "seller_level": "",
+            "free_shipping": "gratis" in envio or "free" in envio or "full" in envio,
+            "permalink": r.get("zdireccion", ""),
+            "thumbnail": r.get("imgDireccion", ""),
             "listing_type": "",
-            "rating": float(r.get("rating", 0) or 0),
-            "review_count": int(r.get("reviewCount", 0) or 0),
+            "visits": 0,
         })
     return items[:max_results] if items else None
 

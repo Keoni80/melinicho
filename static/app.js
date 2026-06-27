@@ -168,7 +168,7 @@ function renderItemsTable(items) {
             <td><img src="${esc(item.thumbnail)}" alt="" class="thumb" loading="lazy" onerror="this.remove()"></td>
             <td><a href="${esc(item.permalink)}" target="_blank" rel="noopener noreferrer" class="item-link">${esc(item.title)}</a></td>
             <td class="price">${fmtPrice(item.price)}</td>
-            <td class="num">${item.sold_quantity}</td>
+            <td class="num">${item.visits > 0 ? item.visits.toLocaleString('es-AR') : '–'}</td>
             <td class="seller" title="${esc(item.seller_name)}">${esc(item.seller_name)}</td>
             <td>${item.free_shipping
                 ? '<span class="badge free">Gratis</span>'
@@ -378,11 +378,11 @@ let _progressInterval = null;
 
 const _PROGRESS_STEPS = [
     [0,     2,  'Iniciando búsqueda...'],
-    [3000,  15, 'Conectando con MercadoLibre...'],
-    [10000, 35, 'Descargando resultados...'],
-    [25000, 55, 'Obteniendo detalles de productos...'],
-    [45000, 75, 'Calculando oportunidades...'],
-    [55000, 90, 'Casi listo...'],
+    [3000,  18, 'Buscando en MercadoLibre...'],
+    [10000, 45, 'Descargando resultados...'],
+    [20000, 68, 'Enriqueciendo con visitas...'],
+    [26000, 85, 'Calculando oportunidades...'],
+    [30000, 93, 'Casi listo...'],
 ];
 
 function setLoading(on) {
@@ -399,13 +399,13 @@ function _startProgress() {
     const fill  = document.getElementById('progress-fill');
     const label = document.getElementById('progress-label');
     const timeEl = document.getElementById('progress-time');
-    const EXPECTED = 65000;
+    const EXPECTED = 35000;
     const start = Date.now();
 
     fill.style.transition = 'none';
     fill.style.width = '2%';
     label.textContent = _PROGRESS_STEPS[0][2];
-    timeEl.textContent = '~65s';
+    timeEl.textContent = '~35s';
 
     _progressInterval = setInterval(() => {
         const elapsed = Date.now() - start;
