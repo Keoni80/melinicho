@@ -358,13 +358,16 @@ def enrich_with_alibaba(items, alibaba_raw, query=""):
             item["alibaba_url"] = None
         return items
 
-    global_min = min(p["price_min"] for p in parsed)
-    global_max = max(p["price_max"] for p in parsed)
+    # Use midpoint per product, then P25-P75 to filter outliers
+    mids = sorted((p["price_min"] + p["price_max"]) / 2 for p in parsed)
+    n = len(mids)
+    p25 = round(mids[max(0, n // 4)], 2)
+    p75 = round(mids[min(n - 1, (3 * n) // 4)], 2)
     ali_search_url = f"https://www.alibaba.com/trade/search?SearchText={requests.utils.quote(query)}"
 
     for item in items:
-        item["alibaba_price_min"] = global_min
-        item["alibaba_price_max"] = global_max
+        item["alibaba_price_min"] = p25
+        item["alibaba_price_max"] = p75
         item["alibaba_url"] = ali_search_url
 
     return items
