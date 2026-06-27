@@ -64,13 +64,17 @@ def init_users_table():
         """)
         admin_user = os.environ.get("ADMIN_USER")
         admin_pass = os.environ.get("ADMIN_PASSWORD")
+        logging.info(f"ADMIN_USER env var present: {bool(admin_user)}, ADMIN_PASSWORD env var present: {bool(admin_pass)}")
         if admin_user and admin_pass:
             pw_hash = hashlib.sha256(admin_pass.encode()).hexdigest()
+            logging.info(f"Upserting admin user: '{admin_user}'")
             conn.execute(
                 "INSERT INTO users (username, password_hash) VALUES (?, ?)"
                 " ON CONFLICT(username) DO UPDATE SET password_hash = excluded.password_hash",
                 (admin_user, pw_hash),
             )
+            count = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+            logging.info(f"Users in DB: {count}")
 
 
 init_db()
@@ -102,9 +106,12 @@ def login():
                 "SELECT id FROM users WHERE username = ? AND password_hash = ?",
                 (username, pw_hash),
             ).fetchone()
+        logging.info(f"Login attempt: user='{username}', hash='{pw_hash[:12]}...'")
         if row:
             session["user"] = username
+            logging.info(f"Login success: {username}")
             return redirect(url_for("index"))
+        logging.info(f"Login failed: no matching user/password")
         error = "Usuario o contraseña incorrectos"
     return render_template("login.html", error=error)
 
