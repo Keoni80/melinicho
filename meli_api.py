@@ -118,7 +118,6 @@ def get_categories():
 
 
 def _search_apify(query="", category_id="", max_results=100):
-    import re as _re
     token = os.environ.get("APIFY_API_TOKEN")
     if not token:
         log.error("APIFY_API_TOKEN not set")
@@ -127,55 +126,80 @@ def _search_apify(query="", category_id="", max_results=100):
     if not query:
         return None
 
-    log.info("Apify scraper: keyword='%s'", query)
+    log.info("Falling back to Apify scraper: keyword='%s'", query)
     try:
         resp = requests.post(
-            "https://api.apify.com/v2/acts/robertoleon57~mercadolibre-price-monitor/run-sync-get-dataset-items",
+            "https://api.apify.com/v2/acts/karamelo~mercadolibre-scraper-espanol-castellano/run-sync-get-dataset-items",
             params={"token": token},
             json={
-                "site": "MLA",
-                "searchQueries": [query],
-                "maxItemsPerQuery": min(max_results, 50),
-                "useApifyProxy": True,
+                "keyword": query,
+                "country": "https://listado.mercadolibre.com.ar/",
+                "maxPages": 1,
             },
             timeout=160,
         )
         resp.raise_for_status()
         data = resp.json()
-        if not isinstance(data, list):
-            log.error("Apify unexpected response: %s", data)
-            return None
     except Exception as e:
         log.error("Apify search failed: %s", e)
         return None
 
     log.info("Apify returned %d items", len(data))
-    if data:
-        log.info("DEBUG first item keys: %s", list(data[0].keys()))
-        log.info("DEBUG first item: %s", data[0])
     items = []
     for r in data:
-        url = r.get("url", "")
-        # Extract MLA item ID from URL if present
-        m = _re.search(r"MLA-?(\d+)", url)
-        item_id = f"MLA{m.group(1)}" if m else ""
+        price_str = r.get("nuevoPrecio", "0") or "0"
+        try:
+            price = float(str(price_str).replace(".", "").replace(",", "."))
+        except (ValueError, TypeError):
+            price = 0
+        envio = str(r.get("Envio", "")).lower()
         items.append({
-            "id": item_id,
-            "title": r.get("title", ""),
-            "price": float(r.get("price", 0) or 0),
-            "currency": r.get("currency", "ARS"),
-            "sold_quantity": int(r.get("sold_quantity", 0) or 0),
+            "id": r.get("SKU", ""),
+            "title": r.get("articuloTitulo", ""),
+            "price": price,
+            "currency": r.get("Moneda", "ARS"),
+            "sold_quantity": 0,
             "available_quantity": 0,
             "condition": "",
-            "seller_id": "",
-            "seller_name": r.get("seller", ""),
+            "seller_id": r.get("sellerID", ""),
+            "seller_name": r.get("Vendedor", "") or r.get("productoMarca", ""),
             "seller_level": "",
-            "free_shipping": bool(r.get("free_shipping", False)),
-            "permalink": url,
-            "thumbnail": "",
+            "free_shipping": "gratis" in envio or "free" in envio or "full" in envio,
+            "permalink": r.get("zdireccion", ""),
+            "thumbnail": r.get("imgDireccion", ""),
             "listing_type": "",
         })
     return items[:max_results] if items else None
+
+
+def enrich_with_visits(items):
+    """Add visit counts to items using MeLi's /visits/items endpoint (works from server)."""
+    ids = [i["id"] for i in items if i.get("id")]
+    if not ids:
+        return items
+
+    visits_map = {}
+    # API accepts up to 50 ids per request
+    for chunk_start in range(0, len(ids), 50):
+        chunk = ids[chunk_start:chunk_start + 50]
+        try:
+            resp = _get(
+                f"{BASE_URL}/visits/items",
+                params={"ids": ",".join(chunk)},
+                timeout=10,
+            )
+            if resp.ok:
+                visits_map.update(resp.json())
+        except Exception as e:
+            log.warning("visits enrichment failed: %s", e)
+            break
+
+    if visits_map:
+        for item in items:
+            item["visits"] = visits_map.get(item["id"], 0)
+        log.info("Enriched %d items with visits", len(visits_map))
+
+    return items
 
 
 def search_meli(query="", category_id="", max_results=100):
@@ -196,7 +220,8 @@ def search_meli(query="", category_id="", max_results=100):
                 log.info("MeLi search returned 403, trying Apify fallback")
                 apify_items = _search_apify(query, category_id, max_results)
                 if apify_items:
-                    return {"items": apify_items, "total": len(apify_items)}
+                    enriched = enrich_with_visits(apify_items)
+                    return {"items": enriched, "total": len(enriched)}
                 return {"error": "La búsqueda de MercadoLibre no está disponible y el scraper Apify falló."}
             resp.raise_for_status()
             data = resp.json()
@@ -206,7 +231,8 @@ def search_meli(query="", category_id="", max_results=100):
             log.info("MeLi search HTTP error, trying Apify fallback")
             apify_items = _search_apify(query, category_id, max_results)
             if apify_items:
-                return {"items": apify_items, "total": len(apify_items)}
+                enriched = enrich_with_visits(apify_items)
+                return {"items": enriched, "total": len(enriched)}
             return {"error": "Error al consultar MercadoLibre y el scraper Apify falló."}
         except Exception as e:
             return {"error": f"Error al consultar MercadoLibre: {e}"}
