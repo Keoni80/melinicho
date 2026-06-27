@@ -118,6 +118,7 @@ def get_categories():
 
 
 def _search_apify(query="", category_id="", max_results=100):
+    import re as _re
     token = os.environ.get("APIFY_API_TOKEN")
     if not token:
         log.error("APIFY_API_TOKEN not set")
@@ -126,21 +127,24 @@ def _search_apify(query="", category_id="", max_results=100):
     if not query:
         return None
 
-    max_pages = 1
-    log.info("Falling back to Apify scraper: keyword='%s', maxPages=%d", query, max_pages)
+    log.info("Apify scraper: keyword='%s'", query)
     try:
         resp = requests.post(
-            "https://api.apify.com/v2/acts/karamelo~mercadolibre-scraper-espanol-castellano/run-sync-get-dataset-items",
+            "https://api.apify.com/v2/acts/robertoleon57~mercadolibre-price-monitor/run-sync-get-dataset-items",
             params={"token": token},
             json={
-                "keyword": query,
-                "country": "https://listado.mercadolibre.com.ar/",
-                "maxPages": max_pages,
+                "site": "MLA",
+                "searchQueries": [query],
+                "maxItemsPerQuery": min(max_results, 50),
+                "useApifyProxy": True,
             },
             timeout=160,
         )
         resp.raise_for_status()
         data = resp.json()
+        if not isinstance(data, list):
+            log.error("Apify unexpected response: %s", data)
+            return None
     except Exception as e:
         log.error("Apify search failed: %s", e)
         return None
@@ -148,26 +152,24 @@ def _search_apify(query="", category_id="", max_results=100):
     log.info("Apify returned %d items", len(data))
     items = []
     for r in data:
-        price_str = r.get("nuevoPrecio", "0") or "0"
-        try:
-            price = float(str(price_str).replace(".", "").replace(",", "."))
-        except (ValueError, TypeError):
-            price = 0
-        envio = str(r.get("Envio", "")).lower()
+        url = r.get("url", "")
+        # Extract MLA item ID from URL if present
+        m = _re.search(r"MLA-?(\d+)", url)
+        item_id = f"MLA{m.group(1)}" if m else ""
         items.append({
-            "id": r.get("SKU", ""),
-            "title": r.get("articuloTitulo", ""),
-            "price": price,
-            "currency": r.get("Moneda", "ARS"),
-            "sold_quantity": 0,
+            "id": item_id,
+            "title": r.get("title", ""),
+            "price": float(r.get("price", 0) or 0),
+            "currency": r.get("currency", "ARS"),
+            "sold_quantity": int(r.get("sold_quantity", 0) or 0),
             "available_quantity": 0,
             "condition": "",
-            "seller_id": r.get("sellerID", ""),
-            "seller_name": r.get("Vendedor", "") or r.get("productoMarca", ""),
+            "seller_id": "",
+            "seller_name": r.get("seller", ""),
             "seller_level": "",
-            "free_shipping": "gratis" in envio or "free" in envio or "full" in envio,
-            "permalink": r.get("zdireccion", ""),
-            "thumbnail": r.get("imgDireccion", ""),
+            "free_shipping": bool(r.get("free_shipping", False)),
+            "permalink": url,
+            "thumbnail": "",
             "listing_type": "",
         })
     return items[:max_results] if items else None
