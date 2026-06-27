@@ -67,7 +67,8 @@ def init_users_table():
         if admin_user and admin_pass:
             pw_hash = hashlib.sha256(admin_pass.encode()).hexdigest()
             conn.execute(
-                "INSERT OR IGNORE INTO users (username, password_hash) VALUES (?, ?)",
+                "INSERT INTO users (username, password_hash) VALUES (?, ?)"
+                " ON CONFLICT(username) DO UPDATE SET password_hash = excluded.password_hash",
                 (admin_user, pw_hash),
             )
 
