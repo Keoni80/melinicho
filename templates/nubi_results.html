@@ -228,6 +228,7 @@ tbody td { padding: .55rem .8rem; vertical-align: middle; }
                         <th>Subcategoría</th>
                         <th>Unidades</th>
                         <th>Precio máx.</th>
+                        <th>Facturación est.</th>
                         <th>Vendedor</th>
                     </tr>
                 </thead>
@@ -356,6 +357,7 @@ function renderTopProducts(products) {
             <td style="color:var(--muted)">${p.cat || '—'}</td>
             <td class="units-val">${fmt(p.units)}</td>
             <td>$${fmt(p.price)}</td>
+            <td style="color:#4FC3F7;font-weight:600">${fmtM(p.units * p.price)}</td>
             <td style="color:var(--muted)">${p.seller}</td>
         </tr>`).join('');
 }
