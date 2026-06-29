@@ -130,6 +130,11 @@ def index():
     return render_template("index.html")
 
 
+@app.route("/nubi-results")
+@login_required
+def nubi_results():
+    return render_template("nubi_results.html")
+
 
 @app.route("/api/categories")
 @login_required

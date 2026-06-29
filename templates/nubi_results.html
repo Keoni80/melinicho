@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nubimetrics — Resultados</title>
+<style>
+:root {
+    --bg: #0D1117;
+    --surface: #161B22;
+    --surface2: #1C2128;
+    --border: #30363D;
+    --text: #E6EDF3;
+    --muted: #8B949E;
+    --accent: #FFE600;
+    --green: #4CAF50;
+    --yellow: #FF9800;
+    --red: #F44336;
+    --blue: #0F3460;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 14px; min-height: 100vh; }
+
+/* ── Header ── */
+.topbar {
+    background: var(--surface);
+    border-bottom: 2px solid var(--accent);
+    padding: .75rem 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+}
+.topbar-logo { color: var(--accent); font-weight: 800; font-size: 1rem; white-space: nowrap; }
+.topbar-logo span { color: var(--text); }
+.topbar-cat { font-weight: 700; font-size: 1rem; color: var(--text); }
+.topbar-period { color: var(--muted); font-size: .85rem; }
+.topbar-stats { display: flex; gap: 1.5rem; flex-wrap: wrap; margin-left: auto; }
+.stat { text-align: right; }
+.stat-val { font-weight: 700; font-size: 1rem; color: var(--accent); }
+.stat-lbl { font-size: .72rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.topbar-actions { display: flex; gap: .6rem; align-items: center; }
+button { cursor: pointer; border: none; border-radius: 6px; font-size: .82rem; font-weight: 600; padding: .45rem .9rem; transition: opacity .15s; }
+button:hover { opacity: .85; }
+button:disabled { opacity: .5; cursor: default; }
+.btn-ai  { background: #6A0DAD; color: #fff; }
+.btn-exp { background: #1A3C5E; color: #4FC3F7; border: 1px solid #4FC3F7; }
+.btn-back { background: var(--surface2); color: var(--muted); border: 1px solid var(--border); }
+
+/* ── Main layout ── */
+.main { padding: 1.25rem 1.5rem; }
+
+/* ── AI section ── */
+#ai-section {
+    background: var(--blue);
+    border-radius: 10px;
+    padding: 1.1rem 1.25rem;
+    margin-bottom: 1.25rem;
+    line-height: 1.7;
+    font-size: .9rem;
+    display: none;
+}
+#ai-section h4 { color: var(--accent); margin-bottom: .6rem; font-size: .85rem; }
+#ai-content strong { color: var(--accent); }
+#ai-content em { color: #81C784; font-style: normal; }
+#ai-content code { background: rgba(255,255,255,.08); padding: .1em .3em; border-radius: 3px; font-size: .85em; }
+
+/* ── Tables ── */
+.section-title {
+    color: var(--accent);
+    font-size: .85rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    margin-bottom: .6rem;
+    margin-top: 1.5rem;
+}
+.section-title:first-child { margin-top: 0; }
+
+.table-wrap { overflow-x: auto; border-radius: 8px; border: 1px solid var(--border); margin-bottom: .5rem; }
+table { width: 100%; border-collapse: collapse; font-size: .83rem; }
+thead th {
+    background: var(--surface2);
+    padding: .6rem .8rem;
+    text-align: left;
+    color: var(--muted);
+    font-size: .75rem;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    white-space: nowrap;
+    user-select: none;
+    cursor: pointer;
+    border-bottom: 1px solid var(--border);
+}
+thead th:hover { color: var(--text); }
+thead th.sorted { color: var(--accent); }
+thead th .sort-arrow { margin-left: .3rem; opacity: .6; }
+tbody tr { border-bottom: 1px solid var(--border); transition: background .1s; }
+tbody tr:last-child { border-bottom: none; }
+tbody tr:hover { background: rgba(255,255,255,.03); }
+tbody td { padding: .55rem .8rem; vertical-align: middle; }
+
+.conc { font-weight: 700; }
+.conc.green { color: var(--green); }
+.conc.yellow { color: var(--yellow); }
+.conc.red { color: var(--red); }
+
+.cat-name { font-weight: 600; max-width: 220px; }
+.units-val { font-weight: 700; }
+
+/* expand row */
+.expand-btn {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    padding: .2rem .5rem;
+    font-size: .75rem;
+    border-radius: 4px;
+}
+.expand-btn:hover { color: var(--text); border-color: var(--muted); }
+.detail-row { display: none; }
+.detail-row td { background: var(--blue); padding: .75rem 1rem 1rem; }
+.detail-row.open { display: table-row; }
+.detail-inner { display: flex; gap: 2rem; flex-wrap: wrap; }
+.detail-col h5 { color: var(--accent); font-size: .75rem; margin-bottom: .4rem; text-transform: uppercase; letter-spacing: .05em; }
+.detail-col ul { list-style: none; }
+.detail-col ul li { padding: .15rem 0; color: var(--muted); font-size: .8rem; }
+.detail-col ul li strong { color: var(--text); }
+
+/* top products table */
+#top-table tbody td { font-size: .8rem; }
+.prod-title { max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* no-data */
+#no-data { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 80vh; gap: 1rem; color: var(--muted); text-align: center; }
+#no-data h2 { color: var(--text); font-size: 1.1rem; }
+</style>
+</head>
+<body>
+
+<div id="no-data" style="display:none">
+    <div style="font-size:2.5rem">📈</div>
+    <h2>No hay datos cargados</h2>
+    <p>Volvé a la app, subí un CSV de Nubimetrics y hacé click en Procesar.</p>
+    <button class="btn-back" onclick="window.close()">Cerrar</button>
+</div>
+
+<div id="app" style="display:none">
+    <div class="topbar">
+        <div class="topbar-logo">⚡ MeLi<span>Nicho</span></div>
+        <div>
+            <div class="topbar-cat" id="hdr-cat">—</div>
+            <div class="topbar-period" id="hdr-period">—</div>
+        </div>
+        <div class="topbar-stats">
+            <div class="stat"><div class="stat-val" id="s-listings">—</div><div class="stat-lbl">Listings</div></div>
+            <div class="stat"><div class="stat-val" id="s-units">—</div><div class="stat-lbl">Unidades</div></div>
+            <div class="stat"><div class="stat-val" id="s-revenue">—</div><div class="stat-lbl">Revenue ARS</div></div>
+            <div class="stat"><div class="stat-val" id="s-sellers">—</div><div class="stat-lbl">Vendedores</div></div>
+            <div class="stat"><div class="stat-val" id="s-subcats">—</div><div class="stat-lbl">Subcategorías</div></div>
+        </div>
+        <div class="topbar-actions">
+            <button class="btn-ai" id="btn-ai">🤖 Analizar con IA</button>
+            <button class="btn-exp" id="btn-exp">↓ Exportar Excel</button>
+            <button class="btn-back" onclick="window.close()">✕ Cerrar</button>
+        </div>
+    </div>
+
+    <div class="main">
+        <div id="ai-section">
+            <h4>🤖 Análisis de oportunidades</h4>
+            <div id="ai-content"></div>
+        </div>
+
+        <div class="section-title">Subcategorías — ordenadas por unidades vendidas</div>
+        <div class="table-wrap">
+            <table id="main-table">
+                <thead>
+                    <tr>
+                        <th data-col="name">#&nbsp;&nbsp;Subcategoría <span class="sort-arrow"></span></th>
+                        <th data-col="listings">Listings <span class="sort-arrow"></span></th>
+                        <th data-col="unique_sellers">Vendedores <span class="sort-arrow"></span></th>
+                        <th data-col="total_units">Unidades <span class="sort-arrow"></span></th>
+                        <th data-col="total_revenue">Revenue ARS <span class="sort-arrow"></span></th>
+                        <th data-col="median_price">Precio med. <span class="sort-arrow"></span></th>
+                        <th data-col="top3_concentration">Conc. top3 <span class="sort-arrow"></span></th>
+                        <th data-col="pct_full">Full % <span class="sort-arrow"></span></th>
+                        <th data-col="pct_free_ship">Env. gratis % <span class="sort-arrow"></span></th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody id="main-tbody"></tbody>
+            </table>
+        </div>
+
+        <div class="section-title" style="margin-top:2rem">Top 15 productos globales</div>
+        <div class="table-wrap">
+            <table id="top-table">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Producto</th>
+                        <th>Subcategoría</th>
+                        <th>Unidades</th>
+                        <th>Precio máx.</th>
+                        <th>Vendedor</th>
+                    </tr>
+                </thead>
+                <tbody id="top-tbody"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+const fmt = n => n.toLocaleString('es-AR');
+const fmtM = n => '$' + (n / 1e6).toFixed(0) + 'M';
+const fmtB = n => n >= 1e9 ? '$' + (n / 1e9).toFixed(1) + 'B' : fmtM(n);
+
+function concClass(v) { return v > 60 ? 'red' : v > 40 ? 'yellow' : 'green'; }
+
+function mdToHtml(t) {
+    return t
+        .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+        .replace(/### (.+)/g,'<h4 style="color:var(--accent);margin:.8rem 0 .3rem">$1</h4>')
+        .replace(/## (.+)/g,'<h3 style="color:var(--accent);margin:.9rem 0 .4rem;font-size:1rem">$1</h3>')
+        .replace(/^[-•] (.+)/gm,'<li style="margin-left:1.2rem;margin-bottom:.2rem">$1</li>')
+        .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
+        .replace(/\n\n/g,'<br><br>')
+        .replace(/\n/g,'<br>');
+}
+
+let nubiData = null;
+let sortCol = 'total_units', sortAsc = false;
+
+function renderSubcats(subcats) {
+    const tbody = document.getElementById('main-tbody');
+    const sorted = [...subcats].sort((a, b) => {
+        const av = a[sortCol], bv = b[sortCol];
+        if (typeof av === 'string') return sortAsc ? av.localeCompare(bv) : bv.localeCompare(av);
+        return sortAsc ? av - bv : bv - av;
+    });
+
+    tbody.innerHTML = sorted.map((s, i) => {
+        const cc = concClass(s.top3_concentration);
+        const topProds = s.top_products || [];
+        const topSells = s.top_sellers || [];
+        return `
+        <tr>
+            <td class="cat-name">${i + 1}. ${s.name}</td>
+            <td>${fmt(s.listings)}</td>
+            <td>${fmt(s.unique_sellers)}</td>
+            <td class="units-val">${fmt(s.total_units)}</td>
+            <td>${fmtM(s.total_revenue)}</td>
+            <td>$${fmt(s.median_price)}</td>
+            <td><span class="conc ${cc}">${s.top3_concentration}%</span></td>
+            <td>${s.pct_full}%</td>
+            <td>${s.pct_free_ship}%</td>
+            <td><button class="expand-btn" onclick="toggleDetail(this, 'detail-${i}')">▶ ver</button></td>
+        </tr>
+        <tr class="detail-row" id="detail-${i}">
+            <td colspan="10">
+                <div class="detail-inner">
+                    <div class="detail-col">
+                        <h5>Top productos</h5>
+                        <ul>
+                            ${topProds.map(p => `<li><strong>${fmt(p.units)} u.</strong> — ${p.title} <span style="color:#4FC3F7">$${fmt(p.price)}</span></li>`).join('')}
+                        </ul>
+                    </div>
+                    <div class="detail-col">
+                        <h5>Top vendedores</h5>
+                        <ul>
+                            ${topSells.map(v => `<li><strong>${fmt(v.units)} u.</strong> — ${v.seller}</li>`).join('')}
+                        </ul>
+                    </div>
+                    <div class="detail-col">
+                        <h5>Métricas</h5>
+                        <ul>
+                            <li>Precio promedio: <strong>$${fmt(s.avg_price)}</strong></li>
+                            <li>Precio mediano: <strong>$${fmt(s.median_price)}</strong></li>
+                            <li>Revenue total: <strong>${fmtM(s.total_revenue)}</strong></li>
+                            <li>Env. gratis: <strong>${s.pct_free_ship}%</strong></li>
+                        </ul>
+                    </div>
+                </div>
+            </td>
+        </tr>`;
+    }).join('');
+
+    document.querySelectorAll('thead th[data-col]').forEach(th => {
+        const col = th.dataset.col;
+        th.classList.toggle('sorted', col === sortCol);
+        th.querySelector('.sort-arrow').textContent = col === sortCol ? (sortAsc ? '▲' : '▼') : '';
+    });
+}
+
+function toggleDetail(btn, id) {
+    const row = document.getElementById(id);
+    const open = row.classList.toggle('open');
+    btn.textContent = open ? '▼ ocultar' : '▶ ver';
+}
+
+function renderTopProducts(products) {
+    document.getElementById('top-tbody').innerHTML = products.map((p, i) => `
+        <tr>
+            <td style="color:var(--muted)">${i + 1}</td>
+            <td class="prod-title" title="${p.title}">${p.title}</td>
+            <td style="color:var(--muted)">${p.cat || '—'}</td>
+            <td class="units-val">${fmt(p.units)}</td>
+            <td>$${fmt(p.price)}</td>
+            <td style="color:var(--muted)">${p.seller}</td>
+        </tr>`).join('');
+}
+
+function render(data) {
+    const m = data.meta;
+    document.getElementById('hdr-cat').textContent = m.category_name || 'Categoría';
+    document.getElementById('hdr-period').textContent = m.period || '';
+    document.getElementById('s-listings').textContent = fmt(m.total_listings);
+    document.getElementById('s-units').textContent = fmt(m.total_units);
+    document.getElementById('s-revenue').textContent = fmtB(m.total_revenue_ars);
+    document.getElementById('s-sellers').textContent = fmt(m.unique_sellers);
+    document.getElementById('s-subcats').textContent = data.subcategories.length;
+    renderSubcats(data.subcategories);
+    renderTopProducts(data.top_products || []);
+}
+
+// Sorting
+document.querySelectorAll('thead th[data-col]').forEach(th => {
+    th.addEventListener('click', () => {
+        const col = th.dataset.col;
+        if (sortCol === col) sortAsc = !sortAsc;
+        else { sortCol = col; sortAsc = false; }
+        renderSubcats(nubiData.subcategories);
+    });
+});
+
+// AI Analysis
+document.getElementById('btn-ai').addEventListener('click', async () => {
+    if (!nubiData) return;
+    const btn = document.getElementById('btn-ai');
+    const sec = document.getElementById('ai-section');
+    const content = document.getElementById('ai-content');
+    btn.disabled = true;
+    btn.textContent = '⏳ Analizando...';
+    sec.style.display = 'block';
+    content.innerHTML = '<span style="color:var(--muted)">Consultando a Claude...</span>';
+    try {
+        const resp = await fetch('/api/nubi-analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ data: nubiData }),
+        });
+        const res = await resp.json();
+        if (!resp.ok || res.error) { content.textContent = 'Error: ' + (res.error || 'No se pudo analizar.'); return; }
+        content.innerHTML = mdToHtml(res.analysis);
+        sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } catch (_) {
+        content.textContent = 'Error de conexión.';
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '🤖 Analizar con IA';
+    }
+});
+
+// Export Excel
+document.getElementById('btn-exp').addEventListener('click', async () => {
+    if (!nubiData) return;
+    const btn = document.getElementById('btn-exp');
+    btn.disabled = true;
+    btn.textContent = '⏳ Generando...';
+    const analysisText = document.getElementById('ai-content').textContent || '';
+    try {
+        const resp = await fetch('/api/nubi-export', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ data: nubiData, analysis: analysisText }),
+        });
+        if (!resp.ok) { const e = await resp.json(); alert('Error: ' + (e.error || 'No se pudo generar.')); return; }
+        const blob = await resp.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `nubimetrics_${nubiData.meta.category_name || 'export'}_${nubiData.meta.period || ''}.xlsx`.replace(/\s+/g, '_');
+        a.click();
+        URL.revokeObjectURL(url);
+    } catch (_) {
+        alert('Error de conexión.');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '↓ Exportar Excel';
+    }
+});
+
+// Init
+try {
+    const raw = localStorage.getItem('nubiResultsData');
+    if (!raw) throw new Error('sin datos');
+    nubiData = JSON.parse(raw);
+    document.getElementById('app').style.display = 'block';
+    render(nubiData);
+} catch (_) {
+    document.getElementById('no-data').style.display = 'flex';
+}
+</script>
+</body>
+</html>
