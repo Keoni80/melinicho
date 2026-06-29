@@ -6,9 +6,10 @@ Market analysis tool for finding profitable niches on MercadoLibre Argentina.
 - **Backend:** Flask (Python), Gunicorn (timeout 180s)
 - **Frontend:** Vanilla JS/CSS
 - **Database:** SQLite (melichnicho.db)
-- **AI:** Claude API (anthropic SDK) for niche analysis
+- **AI:** Claude API (`claude-sonnet-4-6`) for niche analysis
 - **Search:** Apify scraper as primary search (MeLi API search is blocked)
-- **Deploy:** Railway via `railway up` CLI (autodeploy not available on free plan)
+- **Deploy:** Railway via `~/.railway/bin/railway up --detach --service melichnicho` (autodeploy not available on free plan)
+- **Dependencies:** `flask`, `requests`, `anthropic`, `gunicorn`, `openpyxl`
 
 ## MercadoLibre API (critical constraints)
 
@@ -38,33 +39,104 @@ Token refresh in `_get()` handles both 401 and 403.
 - `MELI_CLIENT_SECRET`
 - `MELI_REFRESH_TOKEN`
 - `APIFY_API_TOKEN` — Apify scraper
+- `ADMIN_USER` / `ADMIN_PASSWORD` — login credentials (set via CLI only, not dashboard)
+- `FLASK_SECRET_KEY`
 
 ## Scoring algorithm (analyzer.py)
 - Visits demand: 0–35 pts (visits / max_visits) — primary demand signal
-- Sales bonus: 0–5 pts (sold_quantity / max_sold) — always 0 for now, ready for future
+- Sales bonus: 0–5 pts (sold_quantity / max_sold) — always 0 (blocked endpoint), reserved for future
 - Competition: 0–40 pts (fewer sellers = higher score; falls back to total items if seller_id unavailable)
 - Price positioning: 0–10 pts (closeness to median price)
 - Free shipping bonus: 0–5 pts
 
 ## Key files
-- `app.py` — Flask routes: search, discover, analyze (AI), export CSV, history
+- `app.py` — Flask routes: search, discover, analyze (AI), export CSV, history, rt-upload, rt-analyze, nubi-analyze, nubi-export
 - `meli_api.py` — MeLi API + Apify integration, token refresh, visits enrichment
 - `analyzer.py` — Opportunity scoring, niche stats, seller ranking
-- `static/app.js` — Frontend logic
-- `templates/index.html` — UI
+- `static/app.js` — Frontend logic (search, AI modal, RT modal, Nubimetrics modal)
+- `static/style.css` — Dark theme UI styles
+- `templates/index.html` — Main UI with all modals
 - `Procfile` — Gunicorn config (timeout 180s)
 
 ## Deploy
 ```bash
-railway up
+~/.railway/bin/railway up --detach --service melichnicho
 ```
 Needs `NODE_EXTRA_CA_CERTS` env var set if machine has AVG antivirus (SSL interception).
 
 ## Known issues
-- `sold_quantity` always 0 because `/items/{id}` is blocked
+- `sold_quantity` always 0 because `/items/{id}` is blocked from Railway IPs since April 2025
 - Apify search takes 20-30 seconds (scraper startup time)
 - Free Railway plan has resource limits
+
+---
+
+## Features added 2026-06-29
+
+### 📊 Real Trends integration (XLSX upload)
+**Button:** "📊 Real Trends" (teal, in the search bar)
+
+**Flow:**
+1. In Real Trends: Mercado → select category → Detalle → Exportar (downloads `.xlsx`)
+2. In MeLi Nicho: click "📊 Real Trends" → upload XLSX → see ranking table
+3. Click "🤖 Analizar oportunidades con IA" → Claude analyzes and returns market insights
+
+**Backend endpoints:**
+- `POST /api/rt-upload` — receives XLSX, parses with `openpyxl`, returns ranked products JSON
+- `POST /api/rt-analyze` — receives products array, calls Claude, returns markdown analysis
+
+**Column detection:** auto-detects headers by keyword (`unidades`, `título`, `vendedor`, `precio`, `facturación`)
+
+---
+
+### 📈 Nubimetrics integration (CSV upload — client-side processing)
+**Button:** "📈 Nubimetrics" (orange, in the search bar)
+
+**Flow:**
+1. In Nubimetrics: Mercado Avanzado → Items → Exportar CSV (downloads large CSV, ~85MB)
+2. In MeLi Nicho: click "📈 Nubimetrics" → upload CSV
+3. CSV is parsed **entirely in the browser** (no server upload — avoids Railway size/timeout limits)
+4. Aggregated data (~35KB JSON) is displayed as a subcategory table
+5. Click "🤖 Analizar oportunidades con IA" → sends aggregated data to Claude
+6. Click "↓ Exportar Excel" → downloads multi-sheet XLSX with all data + AI analysis
+
+**Why client-side:** The CSV is 85MB. Railway's proxy and Gunicorn would timeout or reject the upload. FileReader API reads it locally; only the small aggregated result goes to the server.
+
+**Client-side logic (app.js):**
+- `parseCSV(text)` — handles quoted fields
+- `aggregateNubi(rows)` — groups by `Categoria_Nivel_4`, computes units, revenue, unique sellers, avg/median price, % Full, % free shipping, top3 concentration, top products/sellers per subcategory
+- `renderNubiResults(data)` — renders meta bar + subcategory table with color-coded concentration (🟢 ≤30% / 🟡 ≤50% / 🔴 >50%)
+
+**Backend endpoints:**
+- `POST /api/nubi-analyze` — receives aggregated JSON, calls Claude with structured prompt, returns markdown analysis
+- `POST /api/nubi-export` — receives aggregated JSON + analysis text, generates multi-sheet XLSX with openpyxl:
+  - Sheet 1 "Resumen": meta stats + price segments
+  - Sheet 2 "Subcategorías": full table with color-coded concentration
+  - Sheet 3 "Top Productos": top 15 by units sold
+  - Sheet 4 "Análisis IA": plain text of the Claude analysis
+
+**Nubimetrics CSV columns used:**
+- `Categoria_Nivel_4` (fallback: `Nivel_3`) — subcategory grouping
+- `Titulo_Publicacion` — product title
+- `Nickname_Vendedor` — seller
+- `Unidades_Vendidas` — units sold (KEY metric)
+- `Monto_Vendido_Moneda_Local` — revenue ARS
+- `PrecioMonedaLocal` — price ARS
+- `OfreceFull` — MeLi Full (Si/No)
+- `Ofrece_Envio_Gratis` — free shipping (true/false)
+- `Mes` — period
+
+**Claude analysis prompt covers:**
+1. Market summary (size, concentration, dominant categories)
+2. Top 5 niche opportunities with 🟢/🟡/🔴 verdict
+3. Price segments with most demand
+4. Warnings (saturated subcategories)
+5. Final concrete recommendation
+
+---
 
 ## Pending ideas
 - Compare prices with Alibaba (Apify has Alibaba scraper too)
 - On-demand Alibaba price lookup per product with margin calculation
+- Nubimetrics: add price segment aggregation in client-side JS (currently simplified)
+- Consider integrating multiple Nubimetrics CSV exports (different categories) for cross-category analysis

@@ -511,6 +511,37 @@ main {
 .btn-ai:active { transform: scale(.97); }
 .btn-ai:disabled { opacity: .45; cursor: not-allowed; }
 
+.btn-rt {
+    background: linear-gradient(135deg, #00897B 0%, #00BCD4 100%);
+    color: #fff;
+    border: none;
+    border-radius: var(--r);
+    padding: .7rem 1.3rem;
+    font-size: .9rem;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: opacity .15s, transform .1s;
+}
+.btn-rt:hover { opacity: .85; }
+.btn-rt:active { transform: scale(.97); }
+
+.btn-nubi {
+    background: linear-gradient(135deg, #E65100 0%, #FF9800 100%);
+    color: #fff;
+    border: none;
+    border-radius: var(--r);
+    padding: .7rem 1.3rem;
+    font-size: .9rem;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: opacity .15s, transform .1s;
+}
+.btn-nubi:hover { opacity: .85; }
+.btn-nubi:active { transform: scale(.97); }
+.btn-nubi:disabled { opacity: .45; cursor: not-allowed; }
+
 /* ─── Modal ──────────────────────────────────────────── */
 .modal-overlay {
     position: fixed;

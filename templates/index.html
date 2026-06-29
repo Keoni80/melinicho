@@ -26,6 +26,8 @@
             </select>
             <button id="search-btn" class="btn-primary">Buscar nicho</button>
             <button id="discover-btn" class="btn-discover" title="Analiza subcategorías con IA para encontrar nichos con poca competencia">🔍 Descubrir oportunidades</button>
+            <button id="rt-btn" class="btn-rt" title="Subí un XLSX exportado de Real Trends para ver unidades vendidas reales">📊 Real Trends</button>
+            <button id="nubi-btn" class="btn-nubi" title="Analizá una categoría completa desde Nubimetrics">📈 Nubimetrics</button>
         </div>
 
         <button id="filter-toggle" class="filter-toggle">
@@ -140,6 +142,98 @@
 
     </div>
 </main>
+
+<!-- RT Upload Modal -->
+<div id="rt-modal" class="modal-overlay" style="display:none" role="dialog" aria-modal="true" aria-labelledby="rt-modal-title">
+    <div class="modal-box modal-box-wide">
+        <div class="modal-header">
+            <h3 id="rt-modal-title">📊 Real Trends — Ranking de Publicaciones</h3>
+            <button id="close-rt-modal" class="modal-close" aria-label="Cerrar">✕</button>
+        </div>
+        <div class="ai-content" style="padding:1.25rem">
+            <div id="rt-upload-area">
+                <p style="margin-bottom:1rem;color:#aaa">Subí el XLSX exportado desde Real Trends (Mercado → Detalle de categoría → Exportar).</p>
+                <input type="file" id="rt-file-input" accept=".xlsx,.xls" style="display:none">
+                <button id="rt-file-btn" class="btn-primary">📂 Elegir archivo XLSX</button>
+                <span id="rt-file-name" style="margin-left:1rem;color:#888;font-size:.9rem"></span>
+                <button id="rt-upload-btn" class="btn-secondary" style="margin-left:1rem;display:none">Procesar</button>
+            </div>
+            <div id="rt-loading" style="display:none;padding:1rem 0;color:#aaa">Procesando archivo...</div>
+            <div id="rt-error" class="error-msg" style="display:none"></div>
+            <div id="rt-results" style="display:none">
+                <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1rem;flex-wrap:wrap">
+                    <p id="rt-summary" style="color:#aaa;margin:0;flex:1"></p>
+                    <button id="rt-analyze-btn" class="btn-ai">🤖 Analizar oportunidades con IA</button>
+                </div>
+                <div id="rt-ai-result" style="display:none;background:#0F3460;border-radius:8px;padding:1.2rem;margin-bottom:1rem;line-height:1.7;font-size:.9rem"></div>
+                <div class="table-wrap">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Producto</th>
+                                <th>Vendedor</th>
+                                <th>Precio prom.</th>
+                                <th>Unidades vendidas</th>
+                                <th>Facturación</th>
+                            </tr>
+                        </thead>
+                        <tbody id="rt-tbody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Nubimetrics Modal -->
+<div id="nubi-modal" class="modal-overlay" style="display:none" role="dialog" aria-modal="true" aria-labelledby="nubi-modal-title">
+    <div class="modal-box modal-box-wide">
+        <div class="modal-header">
+            <h3 id="nubi-modal-title">📈 Nubimetrics — Análisis de Categoría</h3>
+            <button id="close-nubi-modal" class="modal-close" aria-label="Cerrar">✕</button>
+        </div>
+        <div class="ai-content" style="padding:1.25rem">
+            <div id="nubi-upload-area">
+                <p style="margin-bottom:.5rem;color:#aaa">Exportá desde Nubimetrics: <strong style="color:#FFE600">Mercado Avanzado → Items → Exportar CSV</strong></p>
+                <p style="margin-bottom:1rem;color:#777;font-size:.85rem">El archivo puede pesar varios MB, el procesamiento tarda unos segundos.</p>
+                <input type="file" id="nubi-file-input" accept=".csv" style="display:none">
+                <button id="nubi-file-btn" class="btn-nubi">📂 Elegir CSV de Nubimetrics</button>
+                <span id="nubi-file-name" style="margin-left:1rem;color:#888;font-size:.9rem"></span>
+                <button id="nubi-upload-btn" class="btn-secondary" style="margin-left:1rem;display:none">Procesar</button>
+            </div>
+            <div id="nubi-loading" style="display:none;padding:1.5rem 0">
+                <p id="nubi-loading-msg" style="color:#aaa;margin-bottom:.5rem">Procesando archivo...</p>
+                <div class="progress-track"><div id="nubi-progress" class="progress-fill" style="width:0%"></div></div>
+            </div>
+            <div id="nubi-error" class="error-msg" style="display:none"></div>
+            <div id="nubi-results" style="display:none">
+                <div id="nubi-meta-bar" style="background:#0F3460;border-radius:8px;padding:.8rem 1rem;margin-bottom:1rem;font-size:.85rem;display:flex;gap:2rem;flex-wrap:wrap"></div>
+                <div style="display:flex;gap:.75rem;margin-bottom:1rem;flex-wrap:wrap">
+                    <button id="nubi-analyze-btn" class="btn-ai">🤖 Analizar oportunidades con IA</button>
+                    <button id="nubi-export-btn" class="btn-secondary">↓ Exportar Excel</button>
+                </div>
+                <div id="nubi-ai-result" style="display:none;background:#0F3460;border-radius:8px;padding:1.2rem;margin-bottom:1rem;line-height:1.7;font-size:.9rem"></div>
+                <h4 style="color:#FFE600;margin-bottom:.6rem;font-size:.9rem">Subcategorías — ordenadas por unidades vendidas</h4>
+                <div class="table-wrap">
+                    <table class="data-table" style="font-size:.82rem">
+                        <thead><tr>
+                            <th>Subcategoría</th>
+                            <th>Listings</th>
+                            <th>Vendedores</th>
+                            <th>Unidades</th>
+                            <th>Revenue ARS</th>
+                            <th>Precio med.</th>
+                            <th>Conc. top3</th>
+                            <th>Full %</th>
+                        </tr></thead>
+                        <tbody id="nubi-tbody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
 
 <!-- Discover Modal -->
 <div id="discover-modal" class="modal-overlay" style="display:none" role="dialog" aria-modal="true" aria-labelledby="discover-modal-title">

@@ -4,6 +4,7 @@ import io
 import json
 import logging
 import os
+import re
 import secrets
 import sqlite3
 import time
@@ -19,6 +20,7 @@ from meli_api import get_categories, get_subcategories, sample_subcategory, sear
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", secrets.token_hex(32))
+app.config["MAX_CONTENT_LENGTH"] = 120 * 1024 * 1024  # 120 MB
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "melichnicho.db")
 
 
@@ -345,6 +347,497 @@ def analyze_ai():
         return jsonify({"analysis": analysis_text, "verdict": verdict})
     except anthropic.APIError as e:
         return jsonify({"error": str(e)}), 502
+
+
+@app.route("/api/rt-upload", methods=["POST"])
+@login_required
+def rt_upload():
+    try:
+        import openpyxl
+    except ImportError:
+        return jsonify({"error": "openpyxl no instalado en el servidor."}), 500
+
+    f = request.files.get("file")
+    if not f:
+        return jsonify({"error": "No se recibió ningún archivo."}), 400
+
+    try:
+        wb = openpyxl.load_workbook(f, data_only=True)
+        ws = wb.active
+    except Exception as e:
+        return jsonify({"error": f"No se pudo leer el archivo: {e}"}), 400
+
+    rows = list(ws.iter_rows(values_only=True))
+    if not rows:
+        return jsonify({"error": "El archivo está vacío."}), 400
+
+    # Detectar fila de encabezado buscando columnas clave
+    header_row = None
+    header_idx = 0
+    for i, row in enumerate(rows[:10]):
+        row_lower = [str(c).lower().strip() if c is not None else "" for c in row]
+        if any("unidades" in c for c in row_lower) or any("publicacion" in c for c in row_lower):
+            header_row = row_lower
+            header_idx = i
+            break
+
+    if header_row is None:
+        return jsonify({"error": "No se encontraron las columnas esperadas (Unidades vendidas, Publicaciones)."}), 400
+
+    def col_idx(keywords):
+        for i, h in enumerate(header_row):
+            if any(k in h for k in keywords):
+                return i
+        return None
+
+    idx_title   = col_idx(["publicacion", "título", "titulo", "producto", "nombre"])
+    idx_seller  = col_idx(["vendedor", "seller"])
+    idx_price   = col_idx(["precio"])
+    idx_units   = col_idx(["unidades"])
+    idx_revenue = col_idx(["facturacion", "facturación", "revenue"])
+
+    items = []
+    for row in rows[header_idx + 1:]:
+        if not row or all(c is None for c in row):
+            continue
+        def val(i):
+            if i is None or i >= len(row):
+                return None
+            v = row[i]
+            return v
+
+        title = val(idx_title)
+        if not title:
+            continue
+
+        # Limpiar número: "1.500" → 1500, "+1.500" → 1500
+        def to_num(v):
+            if v is None:
+                return 0
+            s = re.sub(r"[^\d]", "", str(v))
+            return int(s) if s else 0
+
+        def to_float(v):
+            if v is None:
+                return 0.0
+            if isinstance(v, (int, float)):
+                return float(v)
+            s = str(v).replace("$", "").replace("+", "").strip()
+            s = s.replace(".", "").replace(",", ".")
+            try:
+                return float(s)
+            except:
+                return 0.0
+
+        items.append({
+            "title":    str(title).strip(),
+            "seller":   str(val(idx_seller)).strip() if val(idx_seller) else "",
+            "price":    to_float(val(idx_price)),
+            "units":    to_num(val(idx_units)),
+            "revenue":  to_float(val(idx_revenue)),
+        })
+
+    if not items:
+        return jsonify({"error": "No se encontraron filas de datos en el archivo."}), 400
+
+    items.sort(key=lambda x: x["units"], reverse=True)
+    return jsonify({"items": items, "total": len(items)})
+
+
+@app.route("/api/rt-analyze", methods=["POST"])
+@login_required
+def rt_analyze():
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        return jsonify({"error": "ANTHROPIC_API_KEY no configurada en el servidor."}), 500
+
+    data = request.get_json() or {}
+    items = data.get("items", [])
+    if not items:
+        return jsonify({"error": "No hay datos para analizar."}), 400
+
+    items_str = json.dumps(items[:30], ensure_ascii=False, indent=2)
+
+    prompt = (
+        "Sos un experto en e-commerce en MercadoLibre Argentina.\n"
+        "Te paso el ranking de publicaciones de una categoría exportado desde Real Trends.\n"
+        "Cada item tiene: título, vendedor, precio promedio, unidades vendidas, facturación.\n\n"
+        "Analizá estos datos y detectá OPORTUNIDADES DE NEGOCIO para un vendedor que quiere entrar o crecer en esta categoría.\n\n"
+        "Tu análisis debe incluir:\n"
+        "1. **Resumen del mercado** — tamaño, concentración, quiénes dominan\n"
+        "2. **Segmentos de precio** — identificá rangos de precio y cuáles tienen más demanda\n"
+        "3. **Oportunidades detectadas** — productos o nichos dentro de la categoría con:\n"
+        "   - Alta demanda (unidades vendidas) pero pocos competidores dominantes\n"
+        "   - Segmentos de precio sin jugadores fuertes\n"
+        "   - Variantes de producto sub-representadas en el top\n"
+        "4. **Estrategia recomendada** — precio de entrada, tipo de producto, diferenciación\n"
+        "5. **Veredicto** — 🟢 Oportunidad clara / 🟡 Evaluar / 🔴 Mercado saturado\n\n"
+        f"Datos del ranking:\n{items_str}"
+    )
+
+    try:
+        client = anthropic.Anthropic(api_key=api_key)
+        response = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=2048,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return jsonify({"analysis": response.content[0].text})
+    except anthropic.APIError as e:
+        return jsonify({"error": str(e)}), 502
+
+
+@app.route("/api/nubi-upload", methods=["POST"])
+@login_required
+def nubi_upload():
+    import statistics
+    from collections import defaultdict
+
+    f = request.files.get("file")
+    if not f:
+        return jsonify({"error": "No se recibió ningún archivo."}), 400
+
+    try:
+        stream = io.StringIO(f.stream.read().decode("utf-8", errors="replace"))
+        reader = csv.DictReader(stream)
+        rows = list(reader)
+    except Exception as e:
+        return jsonify({"error": f"No se pudo leer el CSV: {e}"}), 400
+
+    if not rows:
+        return jsonify({"error": "El archivo está vacío."}), 400
+
+    def fnum(v):
+        try: return float(v or 0)
+        except: return 0.0
+
+    def fint(v):
+        try: return int(float(v or 0))
+        except: return 0
+
+    # ─── Aggregación por subcategoría ─────────────────────
+    subcats = defaultdict(lambda: {
+        "units": 0, "revenue": 0, "listings": 0,
+        "prices": [], "full": 0, "fship": 0,
+        "sellers": defaultdict(int),
+        "products": defaultdict(lambda: {"units": 0, "price": 0, "seller": ""}),
+    })
+
+    price_buckets = {"<10k": [0,0], "10k-25k": [0,0], "25k-50k": [0,0],
+                     "50k-100k": [0,0], "100k-200k": [0,0], "+200k": [0,0]}
+
+    total_units = 0
+    total_revenue = 0.0
+    unique_sellers_global = set()
+
+    for r in rows:
+        cat = (r.get("Categoria_Nivel_4") or "").strip()
+        if not cat or cat == "-":
+            cat = (r.get("Categoria_Nivel_3") or "").strip() or "Otros"
+
+        u    = fint(r.get("Unidades_Vendidas"))
+        rev  = fnum(r.get("Monto_Vendido_Moneda_Local"))
+        price = fnum(r.get("PrecioMonedaLocal"))
+        seller = r.get("Nickname_Vendedor", "")
+        title  = (r.get("Titulo_Publicacion") or "")[:80].strip()
+
+        total_units   += u
+        total_revenue += rev
+        unique_sellers_global.add(seller)
+
+        d = subcats[cat]
+        d["units"]    += u
+        d["revenue"]  += rev
+        d["listings"] += 1
+        if price > 0: d["prices"].append(price)
+        if r.get("OfreceFull") == "Si":           d["full"]  += 1
+        if r.get("Ofrece_Envio_Gratis") == "true": d["fship"] += 1
+        d["sellers"][seller] += u
+        p = d["products"][title]
+        p["units"] += u
+        if price > p["price"]: p["price"] = price
+        p["seller"] = seller
+
+        # price buckets
+        if price < 10_000:      price_buckets["<10k"][0] += u;    price_buckets["<10k"][1] += 1
+        elif price < 25_000:    price_buckets["10k-25k"][0] += u; price_buckets["10k-25k"][1] += 1
+        elif price < 50_000:    price_buckets["25k-50k"][0] += u; price_buckets["25k-50k"][1] += 1
+        elif price < 100_000:   price_buckets["50k-100k"][0] += u; price_buckets["50k-100k"][1] += 1
+        elif price < 200_000:   price_buckets["100k-200k"][0] += u; price_buckets["100k-200k"][1] += 1
+        else:                   price_buckets["+200k"][0] += u;    price_buckets["+200k"][1] += 1
+
+    # ─── Serializar resultado ──────────────────────────────
+    subcat_list = []
+    for name, d in subcats.items():
+        n = d["listings"]
+        u = d["units"]
+        top_sellers = sorted(d["sellers"].items(), key=lambda x: -x[1])[:3]
+        top3_units  = sum(x[1] for x in top_sellers)
+        top_products = sorted(d["products"].items(), key=lambda x: -x[1]["units"])[:5]
+
+        subcat_list.append({
+            "name":            name,
+            "listings":        n,
+            "unique_sellers":  len(d["sellers"]),
+            "total_units":     u,
+            "total_revenue":   round(d["revenue"]),
+            "avg_price":       round(statistics.mean(d["prices"])) if d["prices"] else 0,
+            "median_price":    round(statistics.median(d["prices"])) if d["prices"] else 0,
+            "pct_full":        round(d["full"] / n * 100) if n else 0,
+            "pct_free_ship":   round(d["fship"] / n * 100) if n else 0,
+            "top3_concentration": round(top3_units / u * 100) if u else 0,
+            "top_sellers":     [{"seller": s, "units": v} for s, v in top_sellers],
+            "top_products":    [{"title": t, "units": p["units"], "price": round(p["price"]), "seller": p["seller"]} for t, p in top_products],
+        })
+
+    subcat_list.sort(key=lambda x: -x["total_units"])
+
+    # top 15 productos globales
+    all_products = defaultdict(lambda: {"units": 0, "price": 0, "seller": "", "cat": ""})
+    for r in rows:
+        title = (r.get("Titulo_Publicacion") or "")[:80].strip()
+        u = fint(r.get("Unidades_Vendidas"))
+        price = fnum(r.get("PrecioMonedaLocal"))
+        all_products[title]["units"] += u
+        if price > all_products[title]["price"]: all_products[title]["price"] = price
+        all_products[title]["seller"] = r.get("Nickname_Vendedor", "")
+        cat = (r.get("Categoria_Nivel_4") or r.get("Categoria_Nivel_3") or "").strip()
+        all_products[title]["cat"] = cat
+
+    top_global = sorted(all_products.items(), key=lambda x: -x[1]["units"])[:15]
+
+    meta = {
+        "category_name": (rows[0].get("Categoria_Nivel_2") or rows[0].get("Categoria_Nivel_1") or "").strip(),
+        "period": (rows[0].get("Mes") or "")[:7],
+        "total_listings": len(rows),
+        "total_units": total_units,
+        "total_revenue_ars": round(total_revenue),
+        "unique_sellers": len(unique_sellers_global),
+    }
+
+    return jsonify({
+        "meta": meta,
+        "subcategories": subcat_list,
+        "top_products": [{"title": t, **p} for t, p in top_global],
+        "price_segments": {k: {"units": v[0], "listings": v[1]} for k, v in price_buckets.items()},
+    })
+
+
+@app.route("/api/nubi-analyze", methods=["POST"])
+@login_required
+def nubi_analyze():
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        return jsonify({"error": "ANTHROPIC_API_KEY no configurada en el servidor."}), 500
+
+    data = request.get_json() or {}
+    agg  = data.get("data", {})
+    if not agg:
+        return jsonify({"error": "Sin datos para analizar."}), 400
+
+    meta     = agg.get("meta", {})
+    subcats  = agg.get("subcategories", [])[:20]
+    top_prods = agg.get("top_products", [])
+    segments = agg.get("price_segments", {})
+
+    summary = json.dumps({
+        "meta": meta,
+        "subcategories": subcats,
+        "top_15_productos": top_prods,
+        "segmentos_de_precio": segments,
+    }, ensure_ascii=False, indent=1)
+
+    prompt = (
+        "Sos un experto en e-commerce en MercadoLibre Argentina.\n"
+        "Te paso datos agregados de Nubimetrics para una categoría completa.\n\n"
+        "Los datos incluyen por subcategoría:\n"
+        "- listings, unique_sellers, total_units, total_revenue, avg_price, median_price\n"
+        "- pct_full (% publicaciones con MeLi Full), pct_free_ship, top3_concentration (% de unidades de los 3 top vendedores)\n"
+        "- top_products y top_sellers\n\n"
+        "Analizá estos datos y producí un informe de oportunidades de negocio con:\n\n"
+        "## 1. Resumen del mercado\n"
+        "Tamaño total, categorías más grandes, concentración general.\n\n"
+        "## 2. Top 5 Oportunidades de Nicho\n"
+        "Para cada oportunidad:\n"
+        "- Subcategoría y por qué es oportunidad\n"
+        "- Nivel de competencia (vendedores, concentración top 3)\n"
+        "- Rango de precio recomendado para entrar\n"
+        "- Estrategia: ¿conviene usar Full? ¿envío gratis?\n"
+        "- Veredicto: 🟢 Entrar / 🟡 Evaluar / 🔴 Evitar\n\n"
+        "## 3. Segmentos de precio con más demanda\n"
+        "Qué rango de precio concentra más unidades y por qué.\n\n"
+        "## 4. Advertencias\n"
+        "Subcategorías saturadas o con barreras de entrada altas.\n\n"
+        "## 5. Recomendación final\n"
+        "La mejor oportunidad concreta para un vendedor nuevo o en crecimiento.\n\n"
+        f"Datos:\n{summary}"
+    )
+
+    try:
+        client = anthropic.Anthropic(api_key=api_key)
+        response = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=3000,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return jsonify({"analysis": response.content[0].text})
+    except anthropic.APIError as e:
+        return jsonify({"error": str(e)}), 502
+
+
+@app.route("/api/nubi-export", methods=["POST"])
+@login_required
+def nubi_export():
+    try:
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+        from openpyxl.utils import get_column_letter
+    except ImportError:
+        return jsonify({"error": "openpyxl no instalado."}), 500
+
+    body = request.get_json() or {}
+    data     = body.get("data", {})
+    analysis = body.get("analysis", "")
+
+    if not data:
+        return jsonify({"error": "Sin datos para exportar."}), 400
+
+    meta      = data.get("meta", {})
+    subcats   = data.get("subcategories", [])
+    top_prods = data.get("top_products", [])
+    segments  = data.get("price_segments", {})
+
+    wb = openpyxl.Workbook()
+
+    # ─── Estilos ──────────────────────────────────────────
+    hdr_font    = Font(bold=True, color="000000")
+    hdr_fill    = PatternFill("solid", fgColor="FFE600")
+    title_font  = Font(bold=True, size=13, color="FFE600")
+    label_font  = Font(bold=True, color="E0E0E0")
+    dark_fill   = PatternFill("solid", fgColor="16213E")
+    green_fill  = PatternFill("solid", fgColor="1B5E20")
+    orange_fill = PatternFill("solid", fgColor="E65100")
+    red_fill    = PatternFill("solid", fgColor="B71C1C")
+    center      = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    thin        = Border(
+        left=Side(style="thin", color="0F3460"),
+        right=Side(style="thin", color="0F3460"),
+        top=Side(style="thin", color="0F3460"),
+        bottom=Side(style="thin", color="0F3460"),
+    )
+
+    def style_header_row(ws, row, cols):
+        for col in range(1, cols + 1):
+            cell = ws.cell(row=row, column=col)
+            cell.font  = hdr_font
+            cell.fill  = hdr_fill
+            cell.alignment = center
+            cell.border = thin
+
+    def style_data_cell(cell, fill=None):
+        cell.alignment = Alignment(vertical="center", wrap_text=True)
+        cell.border    = thin
+        if fill:
+            cell.fill = fill
+
+    # ─── Hoja 1: Resumen ─────────────────────────────────
+    ws1 = wb.active
+    ws1.title = "Resumen"
+    ws1.sheet_view.showGridLines = False
+    ws1.column_dimensions["A"].width = 30
+    ws1.column_dimensions["B"].width = 25
+
+    ws1["A1"] = f"📈 Nubimetrics — {meta.get('category_name', '')} | {meta.get('period', '')}"
+    ws1["A1"].font = title_font
+
+    meta_rows = [
+        ("Total de listings",    f"{meta.get('total_listings', 0):,}"),
+        ("Unidades vendidas",    f"{meta.get('total_units', 0):,}"),
+        ("Facturación total ARS",f"${meta.get('total_revenue_ars', 0):,.0f}"),
+        ("Vendedores únicos",    f"{meta.get('unique_sellers', 0):,}"),
+    ]
+    for i, (label, value) in enumerate(meta_rows, start=3):
+        ws1.cell(row=i, column=1, value=label).font = label_font
+        ws1.cell(row=i, column=2, value=value)
+
+    ws1["A8"] = "Segmentos de precio"
+    ws1["A8"].font = Font(bold=True, color="FFE600")
+    ws1["A9"]  = "Rango";        ws1["B9"]  = "Unidades";  ws1["C9"] = "Listings"
+    ws1.column_dimensions["C"].width = 15
+    style_header_row(ws1, 9, 3)
+    for i, (k, v) in enumerate(segments.items(), start=10):
+        ws1.cell(row=i, column=1, value=k)
+        ws1.cell(row=i, column=2, value=v.get("units", 0))
+        ws1.cell(row=i, column=3, value=v.get("listings", 0))
+        for c in range(1, 4):
+            style_data_cell(ws1.cell(row=i, column=c))
+
+    # ─── Hoja 2: Subcategorías ────────────────────────────
+    ws2 = wb.create_sheet("Subcategorías")
+    ws2.sheet_view.showGridLines = False
+    headers2 = ["Subcategoría","Listings","Vendedores únicos","Unidades vendidas",
+                 "Revenue ARS","Precio promedio","Precio mediano",
+                 "% Full","% Envío gratis","Concentración Top3 %"]
+    col_widths2 = [28,10,18,18,18,16,16,10,14,20]
+    for i, (h, w) in enumerate(zip(headers2, col_widths2), start=1):
+        ws2.column_dimensions[get_column_letter(i)].width = w
+        ws2.cell(row=1, column=i, value=h)
+    style_header_row(ws2, 1, len(headers2))
+
+    for r, s in enumerate(subcats, start=2):
+        conc = s.get("top3_concentration", 0)
+        conc_fill = green_fill if conc <= 30 else (orange_fill if conc <= 50 else red_fill)
+        values = [
+            s.get("name",""), s.get("listings",0), s.get("unique_sellers",0),
+            s.get("total_units",0), s.get("total_revenue",0),
+            s.get("avg_price",0), s.get("median_price",0),
+            s.get("pct_full",0), s.get("pct_free_ship",0), conc,
+        ]
+        for c, v in enumerate(values, start=1):
+            cell = ws2.cell(row=r, column=c, value=v)
+            style_data_cell(cell, fill=conc_fill if c == 10 else None)
+            if c == 10:
+                cell.font = Font(bold=True, color="FFFFFF")
+
+    # ─── Hoja 3: Top Productos ────────────────────────────
+    ws3 = wb.create_sheet("Top Productos")
+    ws3.sheet_view.showGridLines = False
+    headers3 = ["#","Título","Vendedor","Subcategoría","Unidades vendidas","Precio ARS"]
+    col_widths3 = [5, 50, 25, 25, 18, 14]
+    for i, (h, w) in enumerate(zip(headers3, col_widths3), start=1):
+        ws3.column_dimensions[get_column_letter(i)].width = w
+        ws3.cell(row=1, column=i, value=h)
+    style_header_row(ws3, 1, len(headers3))
+
+    for r, p in enumerate(top_prods, start=2):
+        values = [r-1, p.get("title",""), p.get("seller",""), p.get("cat",""),
+                  p.get("units",0), p.get("price",0)]
+        for c, v in enumerate(values, start=1):
+            style_data_cell(ws3.cell(row=r, column=c, value=v))
+
+    # ─── Hoja 4: Análisis IA ──────────────────────────────
+    if analysis:
+        ws4 = wb.create_sheet("Análisis IA")
+        ws4.sheet_view.showGridLines = False
+        ws4.column_dimensions["A"].width = 120
+        # Strip markdown and write as plain text blocks
+        lines = analysis.replace("**", "").replace("##", "").replace("#", "").split("\n")
+        for r, line in enumerate(lines, start=1):
+            cell = ws4.cell(row=r, column=1, value=line.strip())
+            cell.alignment = Alignment(wrap_text=True)
+            if line.startswith("##") or (line.strip() and r <= 3):
+                cell.font = Font(bold=True)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    filename = f"nubimetrics_{meta.get('category_name','categoria').replace(' ','_')}_{meta.get('period','')}.xlsx"
+    return Response(
+        buf.getvalue(),
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
 
 
 if __name__ == "__main__":
