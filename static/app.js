@@ -66,6 +66,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Nubimetrics
     document.getElementById('nubi-btn').addEventListener('click', () => {
+        document.getElementById('nubi-upload-area').style.display = 'block';
         document.getElementById('nubi-modal').style.display = 'flex';
     });
     document.getElementById('close-nubi-modal').addEventListener('click', () => {
@@ -715,7 +716,9 @@ async function uploadNubiFile() {
         progEl.style.width   = '0%';
 
         lastNubiData = data;
+        document.getElementById('nubi-upload-area').style.display = 'none';
         renderNubiResults(data);
+        resultsEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
     } catch (e) {
         loadEl.style.display    = 'none';
