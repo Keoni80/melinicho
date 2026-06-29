@@ -3,6 +3,8 @@
 let currentSearchId = null;
 let lastNicheData = null;
 let lastRtItems = null;
+let rtPendingFile = null;
+let nubiPendingFile = null;
 
 document.addEventListener('DOMContentLoaded', () => {
     loadCategories();
@@ -47,12 +49,20 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('rt-file-input').addEventListener('change', e => {
         const file = e.target.files[0];
         if (file) {
+            rtPendingFile = file;
             document.getElementById('rt-file-name').textContent = file.name;
             document.getElementById('rt-upload-btn').style.display = 'inline-block';
         }
     });
     document.getElementById('rt-upload-btn').addEventListener('click', uploadRtFile);
     document.getElementById('rt-analyze-btn').addEventListener('click', analyzeRtWithAI);
+
+    // RT Drag & Drop
+    setupDropZone('rt-drop-zone', '.xlsx,.xls', file => {
+        rtPendingFile = file;
+        document.getElementById('rt-file-name').textContent = file.name;
+        document.getElementById('rt-upload-btn').style.display = 'inline-block';
+    });
 
     // Nubimetrics
     document.getElementById('nubi-btn').addEventListener('click', () => {
@@ -70,6 +80,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('nubi-file-input').addEventListener('change', e => {
         const file = e.target.files[0];
         if (file) {
+            nubiPendingFile = file;
             document.getElementById('nubi-file-name').textContent = file.name;
             document.getElementById('nubi-upload-btn').style.display = 'inline-block';
         }
@@ -77,6 +88,13 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('nubi-upload-btn').addEventListener('click', uploadNubiFile);
     document.getElementById('nubi-analyze-btn').addEventListener('click', analyzeNubiWithAI);
     document.getElementById('nubi-export-btn').addEventListener('click', exportNubiExcel);
+
+    // Nubimetrics Drag & Drop
+    setupDropZone('nubi-drop-zone', '.csv', file => {
+        nubiPendingFile = file;
+        document.getElementById('nubi-file-name').textContent = file.name;
+        document.getElementById('nubi-upload-btn').style.display = 'inline-block';
+    });
 });
 
 // ─── Categories ───────────────────────────────────────────
@@ -483,6 +501,34 @@ function _stopProgress() {
     }, 350);
 }
 
+// ─── Drop Zone ────────────────────────────────────────────────
+
+function setupDropZone(zoneId, accept, onFile) {
+    const zone = document.getElementById(zoneId);
+    if (!zone) return;
+
+    zone.addEventListener('dragover', e => {
+        e.preventDefault();
+        zone.classList.add('drop-zone-active');
+    });
+    zone.addEventListener('dragleave', e => {
+        if (!zone.contains(e.relatedTarget)) zone.classList.remove('drop-zone-active');
+    });
+    zone.addEventListener('drop', e => {
+        e.preventDefault();
+        zone.classList.remove('drop-zone-active');
+        const file = e.dataTransfer.files[0];
+        if (!file) return;
+        const ext = '.' + file.name.split('.').pop().toLowerCase();
+        if (!accept.split(',').includes(ext)) {
+            zone.classList.add('drop-zone-error');
+            setTimeout(() => zone.classList.remove('drop-zone-error'), 1200);
+            return;
+        }
+        onFile(file);
+    });
+}
+
 // ─── Real Trends Upload ───────────────────────────────────────
 
 function closeRtModal() {
@@ -490,8 +536,8 @@ function closeRtModal() {
 }
 
 async function uploadRtFile() {
-    const input = document.getElementById('rt-file-input');
-    if (!input.files[0]) return;
+    const file = rtPendingFile || document.getElementById('rt-file-input').files[0];
+    if (!file) return;
 
     const errorEl  = document.getElementById('rt-error');
     const loadEl   = document.getElementById('rt-loading');
@@ -502,7 +548,7 @@ async function uploadRtFile() {
     loadEl.style.display = 'block';
 
     const fd = new FormData();
-    fd.append('file', input.files[0]);
+    fd.append('file', file);
 
     try {
         const resp = await fetch('/api/rt-upload', { method: 'POST', body: fd });
@@ -621,7 +667,9 @@ let lastNubiData = null;
 
 async function uploadNubiFile() {
     const input = document.getElementById('nubi-file-input');
-    if (!input.files[0]) return;
+    const inputFile = input.files[0];
+    if (!nubiPendingFile && !inputFile) return;
+    const file = nubiPendingFile || inputFile;
 
     const loadEl    = document.getElementById('nubi-loading');
     const msgEl     = document.getElementById('nubi-loading-msg');
@@ -643,7 +691,7 @@ async function uploadNubiFile() {
             const reader = new FileReader();
             reader.onload  = e => resolve(e.target.result);
             reader.onerror = reject;
-            reader.readAsText(input.files[0], 'UTF-8');
+            reader.readAsText(file, 'UTF-8');
         });
 
         msgEl.textContent  = 'Parseando CSV...';

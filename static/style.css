@@ -636,3 +636,32 @@ main {
 .ai-text h2 { font-size: 1.1rem; }
 .ai-text h3 { font-size: 1rem; }
 .ai-text h4 { font-size: .92rem; }
+
+/* ─── Drag & Drop zone ───────────────────────────────── */
+.drop-zone {
+    border: 2px dashed var(--border);
+    border-radius: var(--r);
+    padding: 1.8rem 1.5rem;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color .2s, background .2s;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: .3rem;
+}
+.drop-zone:hover {
+    border-color: var(--accent);
+    background: var(--accent-dim);
+}
+.drop-zone-active {
+    border-color: var(--accent) !important;
+    background: var(--accent-dim) !important;
+}
+.drop-zone-error {
+    border-color: var(--bad) !important;
+    background: rgba(244,67,54,.08) !important;
+}
+.drop-zone-icon { font-size: 2rem; line-height: 1; }
+.drop-zone-text { color: var(--muted); font-size: .9rem; margin: 0; }
+.drop-zone-or   { color: #555; font-size: .78rem; margin: .15rem 0; }

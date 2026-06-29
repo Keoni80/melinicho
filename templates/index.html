@@ -154,9 +154,16 @@
             <div id="rt-upload-area">
                 <p style="margin-bottom:1rem;color:#aaa">Subí el XLSX exportado desde Real Trends (Mercado → Detalle de categoría → Exportar).</p>
                 <input type="file" id="rt-file-input" accept=".xlsx,.xls" style="display:none">
-                <button id="rt-file-btn" class="btn-primary">📂 Elegir archivo XLSX</button>
-                <span id="rt-file-name" style="margin-left:1rem;color:#888;font-size:.9rem"></span>
-                <button id="rt-upload-btn" class="btn-secondary" style="margin-left:1rem;display:none">Procesar</button>
+                <div id="rt-drop-zone" class="drop-zone">
+                    <div class="drop-zone-icon">📂</div>
+                    <p class="drop-zone-text">Arrastrá el archivo acá</p>
+                    <span class="drop-zone-or">o</span>
+                    <button id="rt-file-btn" class="btn-primary" style="margin-top:.5rem">Elegir archivo XLSX</button>
+                </div>
+                <p id="rt-file-name" style="margin-top:.6rem;color:#888;font-size:.85rem;text-align:center;min-height:1.2em"></p>
+                <div style="text-align:center">
+                    <button id="rt-upload-btn" class="btn-secondary" style="display:none">Procesar</button>
+                </div>
             </div>
             <div id="rt-loading" style="display:none;padding:1rem 0;color:#aaa">Procesando archivo...</div>
             <div id="rt-error" class="error-msg" style="display:none"></div>
@@ -198,9 +205,16 @@
                 <p style="margin-bottom:.5rem;color:#aaa">Exportá desde Nubimetrics: <strong style="color:#FFE600">Mercado Avanzado → Items → Exportar CSV</strong></p>
                 <p style="margin-bottom:1rem;color:#777;font-size:.85rem">El archivo puede pesar varios MB, el procesamiento tarda unos segundos.</p>
                 <input type="file" id="nubi-file-input" accept=".csv" style="display:none">
-                <button id="nubi-file-btn" class="btn-nubi">📂 Elegir CSV de Nubimetrics</button>
-                <span id="nubi-file-name" style="margin-left:1rem;color:#888;font-size:.9rem"></span>
-                <button id="nubi-upload-btn" class="btn-secondary" style="margin-left:1rem;display:none">Procesar</button>
+                <div id="nubi-drop-zone" class="drop-zone">
+                    <div class="drop-zone-icon">📂</div>
+                    <p class="drop-zone-text">Arrastrá el archivo acá</p>
+                    <span class="drop-zone-or">o</span>
+                    <button id="nubi-file-btn" class="btn-nubi" style="margin-top:.5rem">Elegir CSV de Nubimetrics</button>
+                </div>
+                <p id="nubi-file-name" style="margin-top:.6rem;color:#888;font-size:.85rem;text-align:center;min-height:1.2em"></p>
+                <div style="text-align:center">
+                    <button id="nubi-upload-btn" class="btn-secondary" style="display:none">Procesar</button>
+                </div>
             </div>
             <div id="nubi-loading" style="display:none;padding:1.5rem 0">
                 <p id="nubi-loading-msg" style="color:#aaa;margin-bottom:.5rem">Procesando archivo...</p>
