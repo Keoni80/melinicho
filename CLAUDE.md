@@ -50,18 +50,20 @@ Token refresh in `_get()` handles both 401 and 403.
 - Free shipping bonus: 0–5 pts
 
 ## Key files
-- `app.py` — Flask routes: search, discover, analyze (AI), export CSV, history, rt-upload, rt-analyze, nubi-analyze, nubi-export
+- `app.py` — Flask routes: search, discover, analyze (AI), export CSV, history, rt-upload, rt-analyze, nubi-analyze, nubi-export, nubi-results
 - `meli_api.py` — MeLi API + Apify integration, token refresh, visits enrichment
 - `analyzer.py` — Opportunity scoring, niche stats, seller ranking
 - `static/app.js` — Frontend logic (search, AI modal, RT modal, Nubimetrics modal)
 - `static/style.css` — Dark theme UI styles
 - `templates/index.html` — Main UI with all modals
+- `templates/nubi_results.html` — Full-page Nubimetrics results (opens in new tab)
 - `Procfile` — Gunicorn config (timeout 180s)
 
 ## Deploy
 ```bash
-~/.railway/bin/railway up --detach --service melichnicho
+railway up --detach --service melichnicho
 ```
+Railway binary is at `/usr/local/bin/railway`. Autodeploy via GitHub push IS working (triggers automatically on push to master).
 Needs `NODE_EXTRA_CA_CERTS` env var set if machine has AVG antivirus (SSL interception).
 
 ## Known issues
@@ -89,31 +91,45 @@ Needs `NODE_EXTRA_CA_CERTS` env var set if machine has AVG antivirus (SSL interc
 
 ---
 
-### 📈 Nubimetrics integration (CSV upload — client-side processing)
+### 📈 Nubimetrics integration (CSV upload — client-side processing + full-page results)
 **Button:** "📈 Nubimetrics" (orange, in the search bar)
 
 **Flow:**
 1. In Nubimetrics: Mercado Avanzado → Items → Exportar CSV (downloads large CSV, ~85MB)
-2. In MeLi Nicho: click "📈 Nubimetrics" → upload CSV
+2. In MeLi Nicho: click "📈 Nubimetrics" → upload CSV → click "Procesar"
 3. CSV is parsed **entirely in the browser** (no server upload — avoids Railway size/timeout limits)
-4. Aggregated data (~35KB JSON) is displayed as a subcategory table
-5. Click "🤖 Analizar oportunidades con IA" → sends aggregated data to Claude
-6. Click "↓ Exportar Excel" → downloads multi-sheet XLSX with all data + AI analysis
+4. Aggregated JSON (~35KB) is saved to `localStorage` key `nubiResultsData`
+5. A **new tab** opens at `/nubi-results` — full-page results view
+6. From that page: "🤖 Analizar con IA" and "↓ Exportar Excel" buttons call the backend
 
 **Why client-side:** The CSV is 85MB. Railway's proxy and Gunicorn would timeout or reject the upload. FileReader API reads it locally; only the small aggregated result goes to the server.
 
 **Client-side logic (app.js):**
 - `parseCSV(text)` — handles quoted fields
 - `aggregateNubi(rows)` — groups by `Categoria_Nivel_4`, computes units, revenue, unique sellers, avg/median price, % Full, % free shipping, top3 concentration, top products/sellers per subcategory
-- `renderNubiResults(data)` — renders meta bar + subcategory table with color-coded concentration (🟢 ≤30% / 🟡 ≤50% / 🔴 >50%)
+- `uploadNubiFile()` — reads CSV, aggregates, saves to localStorage, opens `/nubi-results` in new tab
+
+**Full-page results (`/nubi-results` → `templates/nubi_results.html`):**
+- Sticky header: category name, period, listings / unidades / facturación (format: $5.9B) / vendedores / subcategorías
+- Sortable subcategory table (click column headers): listings, vendedores, unidades, revenue, precio mediano, concentración top3 (color-coded), Full%, envío gratis%
+- Expandable rows (▶ ver): top 5 productos + top vendedores + métricas extra por subcategoría
+- Top 15 productos globales table: título, subcategoría, unidades, precio máx, **facturación estimada** (unidades × precio_máx), vendedor
+- AI analysis renders in cards per section (##), subsections (###) with left border, verdict pills 🟢/🟡/🔴 with colored background
+- Export Excel button downloads multi-sheet XLSX
 
 **Backend endpoints:**
-- `POST /api/nubi-analyze` — receives aggregated JSON, calls Claude with structured prompt, returns markdown analysis
-- `POST /api/nubi-export` — receives aggregated JSON + analysis text, generates multi-sheet XLSX with openpyxl:
+- `GET /nubi-results` — serves `nubi_results.html` (reads data from localStorage client-side)
+- `POST /api/nubi-analyze` — receives aggregated JSON, calls Claude, returns markdown analysis
+- `POST /api/nubi-export` — receives aggregated JSON + analysis text, generates multi-sheet XLSX:
   - Sheet 1 "Resumen": meta stats + price segments
   - Sheet 2 "Subcategorías": full table with color-coded concentration
   - Sheet 3 "Top Productos": top 15 by units sold
   - Sheet 4 "Análisis IA": plain text of the Claude analysis
+
+**Claude analysis prompt (`/api/nubi-analyze`):**
+- Instructs Claude to use abbreviated formats: $5.9B, $520M, 14.4k (never full numbers)
+- Requests ### per opportunity for structured rendering
+- Covers: market summary, top 5 niches with verdicts, price segments, warnings, final recommendation
 
 **Nubimetrics CSV columns used:**
 - `Categoria_Nivel_4` (fallback: `Nivel_3`) — subcategory grouping
@@ -125,13 +141,6 @@ Needs `NODE_EXTRA_CA_CERTS` env var set if machine has AVG antivirus (SSL interc
 - `OfreceFull` — MeLi Full (Si/No)
 - `Ofrece_Envio_Gratis` — free shipping (true/false)
 - `Mes` — period
-
-**Claude analysis prompt covers:**
-1. Market summary (size, concentration, dominant categories)
-2. Top 5 niche opportunities with 🟢/🟡/🔴 verdict
-3. Price segments with most demand
-4. Warnings (saturated subcategories)
-5. Final concrete recommendation
 
 ---
 
