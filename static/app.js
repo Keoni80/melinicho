@@ -1329,6 +1329,20 @@ async function analyzeSourcingWithAI() {
 
     const products = aggregateSourcingProducts(sourcingAllRows, knownHeader);
 
+    // Calcular simulación directo desde los datos (top N productos por unidades)
+    const simCount = Math.min(maxProd, products.length);
+    const simulation = products.slice(0, simCount).map(p => {
+        const precio = p.precio_promedio || 0;
+        const revenueShare = Math.round(target / simCount);
+        const units = precio > 0 ? Math.ceil(revenueShare / precio) : 0;
+        return {
+            producto: (p['título'] || '').substring(0, 50),
+            precio_ars: precio,
+            unidades_mes: units,
+            revenue_mes: units * precio,
+        };
+    });
+
     btn.textContent = '⏳ Consultando IA...';
 
     try {
@@ -1351,7 +1365,7 @@ async function analyzeSourcingWithAI() {
                 document.getElementById('sourcing-error').textContent = result.error;
                 document.getElementById('sourcing-error').style.display = 'block';
             } else {
-                openSourcingReport(result.analysis, result.simulation || [], { target, minProd, maxProd, shipping, tc });
+                openSourcingReport(result.analysis, simulation, { target, minProd, maxProd, shipping, tc });
             }
         }
     } catch (err) {

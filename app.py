@@ -1035,14 +1035,10 @@ def sourcing_analyze():
         f"- **FOB estimado**: USD X–Y por unidad (China)\n"
         f"- **Apto para {shipping_label}**: peso/tamaño estimado y por qué aplica\n"
         f"- **Veredicto**: 🟢 Alta oportunidad / 🟡 Evaluar / 🔴 Evitar\n\n"
-        f"Al terminar el análisis, cerrá con exactamente este bloque JSON (sin texto después):\n"
-        f"```json\n"
-        f"[{{\"producto\": \"Nombre corto\", \"precio_ars\": 120000, \"unidades_mes\": 25, \"revenue_mes\": 3000000}}]\n"
-        f"```\n"
-        f"Un objeto por producto recomendado. precio_ars = precio sugerido (entero). "
-        f"unidades_mes = unidades que necesita vender para su parte del objetivo. "
-        f"revenue_mes = precio_ars × unidades_mes. "
-        f"La suma de revenue_mes debe aproximarse a ${target_revenue:,.0f} ARS."
+        f"Al final, una tabla resumen:\n"
+        f"| Producto | Precio sugerido | Captura estimada/mes |\n"
+        f"| --- | --- | --- |\n"
+        f"Con una línea final indicando si el objetivo de ${target_revenue:,.0f} ARS es alcanzable."
     )
 
     try:
@@ -1052,16 +1048,7 @@ def sourcing_analyze():
             max_tokens=3000,
             messages=[{"role": "user", "content": prompt}],
         )
-        text = response.content[0].text
-        simulation = []
-        json_match = re.search(r'```json\s*([\s\S]*?)\s*```', text, re.IGNORECASE)
-        if json_match:
-            try:
-                simulation = json.loads(json_match.group(1))
-                text = text[:json_match.start()].strip()
-            except Exception:
-                pass
-        return jsonify({"analysis": text, "simulation": simulation})
+        return jsonify({"analysis": response.content[0].text})
     except anthropic.APIError as e:
         return jsonify({"error": str(e)}), 502
 
