@@ -1027,24 +1027,36 @@ def sourcing_analyze():
         f"2. Apto para importar vía {shipping_label}\n"
         f"3. Competencia manejable (no dominada por pocos vendedores con alta concentración)\n"
         f"4. Demanda probada en datos reales de Nubimetrics\n\n"
-        f"Para cada producto recomendado:\n"
-        f"- **Producto**: nombre específico y categoría\n"
-        f"- **Demanda del mercado**: unidades totales, revenue total del mercado, vendedores compitiendo\n"
-        f"- **Mi captura estimada**: si capturo X% = Y unidades = $Z ARS/mes\n"
-        f"- **Precio de venta sugerido** en ARS\n"
-        f"- **FOB estimado**: rango en USD para producto terminado de China\n"
+        f"Para cada producto recomendado usá este formato:\n"
+        f"### [Nombre del producto]\n"
+        f"- **Demanda del mercado**: unidades totales vendidas, revenue total, vendedores compitiendo\n"
+        f"- **Mi captura estimada**: si capturo X% del mercado = Y unidades/mes = $Z ARS/mes\n"
+        f"- **Precio de venta sugerido**: $X ARS\n"
+        f"- **FOB estimado**: USD X–Y por unidad (China)\n"
         f"- **Apto para {shipping_label}**: peso/tamaño estimado y por qué aplica\n"
         f"- **Veredicto**: 🟢 Alta oportunidad / 🟡 Evaluar / 🔴 Evitar\n\n"
-        f"Al final, una tabla **Resumen Ejecutivo**:\n"
-        f"| Producto | Precio sugerido | U/mes estimadas | Revenue mensual |\n"
-        f"Con TOTAL y diferencia vs objetivo ${target_revenue:,.0f} ARS (+/-)."
+        f"Luego incluí estas dos secciones finales:\n\n"
+        f"## Simulación para alcanzar el objetivo\n"
+        f"Mostrá la matemática exacta de cómo sumar ${target_revenue:,.0f} ARS/mes con los productos recomendados.\n"
+        f"Usá esta tabla:\n"
+        f"| Producto | Precio venta | U/mes necesarias | Revenue mensual | % del objetivo |\n"
+        f"| --- | --- | --- | --- | --- |\n"
+        f"Incluí fila TOTAL y una línea indicando si se supera, alcanza o falta respecto al objetivo.\n"
+        f"Explicá los supuestos: cuánto tiempo tarda en llegar a esas unidades (mes 1, mes 3, mes 6).\n\n"
+        f"## Estrategia de venta por producto\n"
+        f"Para cada producto recomendado, una estrategia concreta con:\n"
+        f"- **Precio de entrada**: cómo posicionarse vs. la competencia (más barato, igual, premium)\n"
+        f"- **Logística**: ¿conviene MeLi Full? ¿envío gratis desde qué precio?\n"
+        f"- **Diferenciación**: qué mejorar respecto a los competidores actuales (título, fotos, ficha técnica, bundle)\n"
+        f"- **Publicidad**: ¿Product Ads desde el día 1? ¿cuánto invertir? ¿qué keywords?\n"
+        f"- **Rampa de ventas**: estimación realista mes 1 / mes 3 / mes 6 en unidades"
     )
 
     try:
         client = anthropic.Anthropic(api_key=api_key)
         response = client.messages.create(
             model="claude-sonnet-4-6",
-            max_tokens=3000,
+            max_tokens=4000,
             messages=[{"role": "user", "content": prompt}],
         )
         return jsonify({"analysis": response.content[0].text})
