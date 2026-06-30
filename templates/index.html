@@ -28,6 +28,8 @@
             <button id="discover-btn" class="btn-discover" title="Analiza subcategorías con IA para encontrar nichos con poca competencia">🔍 Descubrir oportunidades</button>
             <button id="rt-btn" class="btn-rt" title="Subí un XLSX exportado de Real Trends para ver unidades vendidas reales">📊 Real Trends</button>
             <button id="nubi-btn" class="btn-nubi" title="Analizá una categoría completa desde Nubimetrics">📈 Nubimetrics</button>
+            <button id="store-btn" class="btn-store" title="Ver tus publicaciones activas con ventas reales y recomendaciones de crecimiento">🏪 Mi Tienda</button>
+            <button id="sourcing-btn" class="btn-sourcing" title="Subí reportes de Nubimetrics y encontrá los mejores productos para importar y vender">🎯 Sourcing</button>
         </div>
 
         <button id="filter-toggle" class="filter-toggle">
@@ -72,6 +74,20 @@
             </div>
         </div>
     </section>
+
+    <!-- Dashboard de ventas -->
+    <div class="sales-dashboard">
+        <div class="sales-card sales-card-today">
+            <div class="sales-label">Ventas hoy</div>
+            <div id="today-amount" class="sales-amount">—</div>
+            <div id="today-orders" class="sales-sub">cargando...</div>
+        </div>
+        <div class="sales-card sales-card-month">
+            <div class="sales-label">Ventas este mes</div>
+            <div id="month-amount" class="sales-amount">—</div>
+            <div id="month-orders" class="sales-sub">cargando...</div>
+        </div>
+    </div>
 
     <!-- Contenido principal -->
     <div class="content-grid">
@@ -245,6 +261,113 @@
                     </table>
                 </div>
             </div>
+        </div>
+    </div>
+</div>
+
+<!-- Mi Tienda Modal -->
+<div id="store-modal" class="modal-overlay" style="display:none" role="dialog" aria-modal="true" aria-labelledby="store-modal-title">
+    <div class="modal-box modal-box-wide">
+        <div class="modal-header">
+            <h3 id="store-modal-title">🏪 Mi Tienda — Publicaciones en MercadoLibre</h3>
+            <button id="close-store-modal" class="modal-close" aria-label="Cerrar">✕</button>
+        </div>
+        <div class="ai-content" style="padding:1.25rem">
+            <div id="store-loading" style="display:none;padding:1rem 0">
+                <p id="store-loading-msg" style="color:#aaa;margin-bottom:.5rem">Cargando publicaciones desde MercadoLibre...</p>
+                <div class="progress-track"><div id="store-progress" class="progress-fill" style="width:0%"></div></div>
+            </div>
+            <div id="store-error" class="error-msg" style="display:none"></div>
+            <div id="store-results" style="display:none">
+                <div id="store-meta-bar" style="background:#0F3460;border-radius:8px;padding:.8rem 1rem;margin-bottom:1rem;font-size:.85rem;display:flex;gap:2rem;flex-wrap:wrap"></div>
+                <div style="display:flex;gap:.75rem;margin-bottom:1rem;flex-wrap:wrap">
+                    <button id="store-analyze-btn" class="btn-ai">🤖 Recomendar productos para crecer</button>
+                </div>
+                <div id="store-ai-result" style="display:none;background:#0F3460;border-radius:8px;padding:1.2rem;margin-bottom:1rem;line-height:1.7;font-size:.9rem"></div>
+                <h4 style="color:#FFE600;margin-bottom:.6rem;font-size:.9rem">Publicaciones — ordenadas por revenue estimado</h4>
+                <div class="table-wrap">
+                    <table class="data-table" style="font-size:.82rem">
+                        <thead><tr>
+                            <th>#</th>
+                            <th></th>
+                            <th>Título</th>
+                            <th>Precio</th>
+                            <th>Vendidos</th>
+                            <th>Revenue est.</th>
+                            <th>Stock</th>
+                            <th>Estado</th>
+                        </tr></thead>
+                        <tbody id="store-tbody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Sourcing Modal -->
+<div id="sourcing-modal" class="modal-overlay" style="display:none" role="dialog" aria-modal="true" aria-labelledby="sourcing-modal-title">
+    <div class="modal-box modal-box-wide">
+        <div class="modal-header">
+            <h3 id="sourcing-modal-title">🎯 Sourcing — Encontrá los mejores productos para importar</h3>
+            <button id="close-sourcing-modal" class="modal-close" aria-label="Cerrar">✕</button>
+        </div>
+        <div class="ai-content" style="padding:1.25rem">
+            <div id="sourcing-upload-area">
+                <p style="margin-bottom:.6rem;color:#aaa">Subí uno o más CSVs exportados desde Nubimetrics: <strong style="color:#FFE600">Mercado Avanzado → Items → Exportar CSV</strong>. Cada archivo es una categoría.</p>
+                <p style="margin-bottom:1rem;color:#666;font-size:.82rem">Los archivos se procesan en el browser — no se suben al servidor.</p>
+                <div id="sourcing-dropzone" class="sourcing-dropzone">
+                    <span style="font-size:1.8rem">📂</span>
+                    <span>Arrastrá los CSV acá o <label for="sourcing-file-input" class="sourcing-file-label">elegí archivos</label></span>
+                    <input type="file" id="sourcing-file-input" accept=".csv" multiple style="display:none">
+                </div>
+                <div id="sourcing-file-list" style="margin-top:.75rem"></div>
+            </div>
+
+            <div id="sourcing-criteria" style="display:none;margin-top:1.25rem">
+                <div class="sourcing-criteria-grid">
+                    <div class="filter-group">
+                        <label for="sourcing-target">🎯 Objetivo mensual (ARS)</label>
+                        <input type="text" id="sourcing-target" class="keyword-input" placeholder="Ej: 30.000.000" inputmode="numeric">
+                    </div>
+                    <div class="filter-group">
+                        <label for="sourcing-min-prod">📦 Mínimo de productos</label>
+                        <input type="number" id="sourcing-min-prod" class="keyword-input" value="1" min="1" max="10">
+                    </div>
+                    <div class="filter-group">
+                        <label for="sourcing-max-prod">📦 Máximo de productos</label>
+                        <input type="number" id="sourcing-max-prod" class="keyword-input" value="3" min="1" max="10">
+                    </div>
+                    <div class="filter-group">
+                        <label for="sourcing-tc">💵 Tipo de cambio (ARS/USD)</label>
+                        <input type="number" id="sourcing-tc" class="keyword-input" value="1500" min="1">
+                    </div>
+                </div>
+                <div style="margin-top:1rem">
+                    <label style="color:#FFE600;font-weight:bold;display:block;margin-bottom:.6rem">🚢 Método de importación</label>
+                    <div style="display:flex;gap:2rem;flex-wrap:wrap">
+                        <label class="sourcing-radio">
+                            <input type="radio" name="sourcing-shipping" value="courier" checked>
+                            <span class="sourcing-radio-box">
+                                <strong>✈️ Courier (aéreo)</strong>
+                                <small>Productos livianos &lt;1kg, alto valor/peso</small>
+                            </span>
+                        </label>
+                        <label class="sourcing-radio">
+                            <input type="radio" name="sourcing-shipping" value="maritimo">
+                            <span class="sourcing-radio-box">
+                                <strong>🚢 Marítimo</strong>
+                                <small>Productos grandes o pesados, mayor volumen</small>
+                            </span>
+                        </label>
+                    </div>
+                </div>
+                <button id="sourcing-analyze-btn" class="btn-ai" style="margin-top:1.25rem">🤖 Analizar y recomendar productos</button>
+            </div>
+
+            <div id="sourcing-loading" style="display:none;padding:1rem 0;color:#aaa">🔄 Analizando con IA, puede tardar unos segundos...</div>
+            <div id="sourcing-error" class="error-msg" style="display:none"></div>
+            <div id="sourcing-ai-result" style="display:none;background:#0F3460;border-radius:8px;padding:1.2rem;margin-top:1rem;line-height:1.7;font-size:.9rem"></div>
         </div>
     </div>
 </div>

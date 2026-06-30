@@ -9,6 +9,7 @@ let nubiPendingFile = null;
 document.addEventListener('DOMContentLoaded', () => {
     loadCategories();
     loadHistory();
+    loadSalesSummary();
 
     document.getElementById('search-btn').addEventListener('click', performSearch);
     document.getElementById('keyword-input').addEventListener('keydown', e => {
@@ -36,6 +37,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (e.key === 'Escape') {
             closeModal(); closeDiscoverModal(); closeRtModal();
             document.getElementById('nubi-modal').style.display = 'none';
+            document.getElementById('store-modal').style.display = 'none';
         }
     });
 
@@ -95,7 +97,65 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('nubi-file-name').textContent = file.name;
         document.getElementById('nubi-upload-btn').style.display = 'inline-block';
     });
+
+    // Mi Tienda
+    document.getElementById('store-btn').addEventListener('click', openStoreModal);
+    document.getElementById('close-store-modal').addEventListener('click', () => {
+        document.getElementById('store-modal').style.display = 'none';
+    });
+    document.getElementById('store-modal').addEventListener('click', e => {
+        if (e.target === e.currentTarget) document.getElementById('store-modal').style.display = 'none';
+    });
+    document.getElementById('store-analyze-btn').addEventListener('click', analyzeStoreWithAI);
+
+    // Sourcing
+    document.getElementById('sourcing-btn').addEventListener('click', () => {
+        document.getElementById('sourcing-modal').style.display = 'flex';
+    });
+    document.getElementById('close-sourcing-modal').addEventListener('click', () => {
+        document.getElementById('sourcing-modal').style.display = 'none';
+    });
+    document.getElementById('sourcing-modal').addEventListener('click', e => {
+        if (e.target === e.currentTarget) document.getElementById('sourcing-modal').style.display = 'none';
+    });
+    document.getElementById('sourcing-file-input').addEventListener('change', e => {
+        handleSourcingFiles(e.target.files);
+    });
+    document.getElementById('sourcing-analyze-btn').addEventListener('click', analyzeSourcingWithAI);
+    document.getElementById('sourcing-target').addEventListener('input', e => {
+        const digits = e.target.value.replace(/\D/g, '');
+        e.target.value = digits ? parseInt(digits, 10).toLocaleString('es-AR') : '';
+    });
+
+    // Sourcing drag & drop
+    const dz = document.getElementById('sourcing-dropzone');
+    dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-over'); });
+    dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
+    dz.addEventListener('drop', e => {
+        e.preventDefault();
+        dz.classList.remove('drag-over');
+        handleSourcingFiles(e.dataTransfer.files);
+    });
+    dz.addEventListener('click', () => document.getElementById('sourcing-file-input').click());
 });
+
+// ─── Sales Dashboard ──────────────────────────────────────
+
+async function loadSalesSummary() {
+    try {
+        const resp = await fetch('/api/sales-summary');
+        if (!resp.ok) return;
+        const data = await resp.json();
+
+        document.getElementById('today-amount').textContent = fmtPrice(data.today.amount);
+        document.getElementById('today-orders').textContent =
+            `${data.today.orders} orden${data.today.orders !== 1 ? 'es' : ''} · ${data.as_of}hs`;
+
+        document.getElementById('month-amount').textContent = fmtPrice(data.month.amount);
+        document.getElementById('month-orders').textContent =
+            `${data.month.orders} orden${data.month.orders !== 1 ? 'es' : ''} en el mes`;
+    } catch (_) {}
+}
 
 // ─── Categories ───────────────────────────────────────────
 
@@ -905,6 +965,126 @@ async function analyzeNubiWithAI() {
     }
 }
 
+// ─── Mi Tienda ────────────────────────────────────────────
+
+let lastStoreItems = null;
+let _storeProgressInterval = null;
+
+async function openStoreModal() {
+    document.getElementById('store-modal').style.display = 'flex';
+    if (lastStoreItems) return; // ya cargado
+    await loadStoreItems();
+}
+
+async function loadStoreItems() {
+    const loadEl    = document.getElementById('store-loading');
+    const msgEl     = document.getElementById('store-loading-msg');
+    const progEl    = document.getElementById('store-progress');
+    const errorEl   = document.getElementById('store-error');
+    const resultsEl = document.getElementById('store-results');
+
+    errorEl.style.display   = 'none';
+    resultsEl.style.display  = 'none';
+    loadEl.style.display     = 'block';
+    progEl.style.width       = '0%';
+
+    // Fake progress over ~8 seconds
+    const start = Date.now();
+    _storeProgressInterval = setInterval(() => {
+        const elapsed = Math.min(Date.now() - start, 8000);
+        const pct = Math.round((elapsed / 8000) * 90);
+        progEl.style.width = pct + '%';
+        if (elapsed < 2000)       msgEl.textContent = 'Conectando con MercadoLibre...';
+        else if (elapsed < 5000)  msgEl.textContent = 'Descargando publicaciones...';
+        else                       msgEl.textContent = 'Procesando datos...';
+    }, 300);
+
+    try {
+        const resp = await fetch('/api/my-store');
+        const data = await resp.json();
+
+        clearInterval(_storeProgressInterval);
+        progEl.style.width = '100%';
+        await new Promise(r => setTimeout(r, 300));
+        loadEl.style.display = 'none';
+
+        if (!resp.ok || data.error) {
+            errorEl.textContent = data.error || 'Error cargando la tienda.';
+            errorEl.style.display = 'block';
+            return;
+        }
+
+        lastStoreItems = data.items;
+        renderStoreResults(data);
+    } catch (e) {
+        clearInterval(_storeProgressInterval);
+        loadEl.style.display = 'none';
+        errorEl.textContent = 'Error de conexión al cargar la tienda.';
+        errorEl.style.display = 'block';
+    }
+}
+
+function renderStoreResults(data) {
+    const totalRev = data.total_revenue_est;
+    document.getElementById('store-meta-bar').innerHTML = `
+        <span>📦 <strong>${data.total.toLocaleString('es-AR')}</strong> publicaciones</span>
+        <span>✅ <strong>${data.active_count.toLocaleString('es-AR')}</strong> activas</span>
+        <span>💰 Revenue hist. est. <strong>$${(totalRev/1e6).toFixed(0)}M ARS</strong></span>
+    `;
+
+    const tbody = document.getElementById('store-tbody');
+    tbody.innerHTML = data.items.slice(0, 200).map((item, i) => {
+        const statusColor = item.status === 'active' ? '#4CAF50' : '#7A8499';
+        const statusLabel = item.status === 'active' ? 'Activa' : item.status === 'closed' ? 'Cerrada' : item.status;
+        return `<tr>
+            <td class="rank">${i + 1}</td>
+            <td><img src="${esc(item.thumbnail)}" alt="" class="thumb" loading="lazy" onerror="this.style.display='none'"></td>
+            <td><a href="${esc(item.permalink)}" target="_blank" rel="noopener noreferrer" class="item-link">${esc(item.title)}</a></td>
+            <td class="price">${fmtPrice(item.price)}</td>
+            <td class="num">${item.sold_quantity.toLocaleString('es-AR')}</td>
+            <td class="price">${item.revenue > 0 ? '$' + item.revenue.toLocaleString('es-AR') : '–'}</td>
+            <td class="num">${item.available_quantity}</td>
+            <td style="color:${statusColor};font-size:.78rem;font-weight:600">${statusLabel}</td>
+        </tr>`;
+    }).join('');
+
+    document.getElementById('store-ai-result').style.display = 'none';
+    document.getElementById('store-results').style.display = 'block';
+}
+
+async function analyzeStoreWithAI() {
+    if (!lastStoreItems) return;
+    const btn   = document.getElementById('store-analyze-btn');
+    const aiDiv = document.getElementById('store-ai-result');
+
+    btn.disabled = true;
+    btn.textContent = '⏳ Analizando portfolio...';
+    aiDiv.style.display = 'none';
+
+    try {
+        const resp = await fetch('/api/my-store-analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ items: lastStoreItems, target_revenue: 30_000_000 }),
+        });
+        const data = await resp.json();
+        if (!resp.ok || data.error) {
+            aiDiv.textContent = 'Error: ' + (data.error || 'No se pudo analizar.');
+            aiDiv.style.display = 'block';
+            return;
+        }
+        aiDiv.innerHTML = mdToHtml(data.analysis);
+        aiDiv.style.display = 'block';
+        aiDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    } catch (_) {
+        aiDiv.textContent = 'Error de conexión.';
+        aiDiv.style.display = 'block';
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '🤖 Recomendar productos para crecer';
+    }
+}
+
 async function exportNubiExcel() {
     if (!lastNubiData) return;
     const btn = document.getElementById('nubi-export-btn');
@@ -936,5 +1116,213 @@ async function exportNubiExcel() {
     } finally {
         btn.disabled = false;
         btn.textContent = '↓ Exportar Excel';
+    }
+}
+
+// ─── Sourcing Report Tab ─────────────────────────────────
+
+function openSourcingReport(analysisText, criteria) {
+    const shippingLabel = criteria.shipping === 'courier' ? '✈️ Courier' : '🚢 Marítimo';
+    const targetFmt = criteria.target.toLocaleString('es-AR');
+    const now = new Date().toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' });
+
+    const chips = `
+        <span class="chip">🎯 Objetivo <strong>$${targetFmt} ARS</strong></span>
+        <span class="chip">📦 <strong>${criteria.minProd}–${criteria.maxProd}</strong> productos</span>
+        <span class="chip">${shippingLabel}</span>
+        <span class="chip">💵 TC <strong>${criteria.tc.toLocaleString('es-AR')}</strong></span>
+        <span class="chip">🕐 ${now}</span>`;
+
+    localStorage.setItem('sourcing_report_data', JSON.stringify({
+        html: mdToHtml(analysisText),
+        chips,
+    }));
+}
+
+// ─── Sourcing Module ──────────────────────────────────────
+
+let sourcingAllRows = [];   // accumulates rows from all parsed CSVs
+let sourcingFileCount = 0;
+
+function handleSourcingFiles(files) {
+    if (!files || !files.length) return;
+    Array.from(files).forEach(file => {
+        const reader = new FileReader();
+        reader.onload = e => {
+            const rows = parseCSV(e.target.result);
+            if (rows.length > 1) {
+                sourcingAllRows = sourcingAllRows.concat(rows.slice(1)); // skip header each time
+                sourcingFileCount++;
+                addSourcingFileItem(file.name, rows.length - 1);
+                document.getElementById('sourcing-criteria').style.display = 'block';
+            }
+        };
+        reader.readAsText(file, 'utf-8');
+    });
+}
+
+function addSourcingFileItem(name, rowCount) {
+    const list = document.getElementById('sourcing-file-list');
+    const item = document.createElement('div');
+    item.className = 'sourcing-file-item';
+    item.innerHTML = `
+        <span class="sourcing-file-ok">✓</span>
+        <span class="sourcing-file-name">${name}</span>
+        <span class="sourcing-file-count">${rowCount.toLocaleString('es-AR')} registros</span>
+    `;
+    list.appendChild(item);
+}
+
+function aggregateSourcingProducts(rows, headerRow) {
+    // Find column indices from the first CSV's header (stored separately)
+    const h = headerRow;
+    const ci = k => h.findIndex(c => c.toLowerCase().includes(k.toLowerCase()));
+
+    const iTitle  = ci('Titulo_Publicacion');
+    const iPrice  = ci('PrecioMonedaLocal') !== -1 ? ci('PrecioMonedaLocal') : ci('Precio_Original');
+    const iUnits  = ci('unidades_vendidas');
+    const iRev    = ci('monto_vendido_moneda_local');
+    const iSeller = ci('nickname_vendedor');
+    const iFull   = ci('ofrecefull');
+    const iFship  = ci('ofrece_envio_gratis');
+    const iCat4   = ci('categoria_nivel_4');
+    const iCat3   = ci('categoria_nivel_3');
+    const iCat2   = ci('categoria_nivel_2');
+
+    const clean = v => (v || '').trim();
+    const fnum  = v => { try { return parseFloat(v) || 0; } catch { return 0; } };
+    const fint  = v => { try { return parseInt(v) || 0; } catch { return 0; } };
+
+    const products = {};
+
+    for (const r of rows) {
+        const title  = clean(r[iTitle]).slice(0, 80);
+        if (!title) continue;
+
+        const price  = fnum(r[iPrice]);
+        const units  = fint(r[iUnits]);
+        const rev    = fnum(r[iRev]);
+        const seller = clean(r[iSeller]);
+        const full   = clean(r[iFull]) === 'Si';
+        const cat    = clean(r[iCat4]) || clean(r[iCat3]) || clean(r[iCat2]) || '';
+
+        if (!products[title]) {
+            products[title] = { units: 0, revenue: 0, prices: [], sellers: new Set(), full_count: 0, cat };
+        }
+        const p = products[title];
+        p.units   += units;
+        p.revenue += rev;
+        if (price > 0) p.prices.push(price);
+        p.sellers.add(seller);
+        if (full) p.full_count++;
+    }
+
+    const mean = arr => arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : 0;
+
+    return Object.entries(products)
+        .map(([title, p]) => ({
+            título:            title,
+            precio_promedio:   mean(p.prices),
+            total_unidades:    p.units,
+            total_revenue_ARS: Math.round(p.revenue),
+            vendedores_únicos: p.sellers.size,
+            pct_full:          p.prices.length ? Math.round(p.full_count / p.prices.length * 100) : 0,
+            categoría:         p.cat,
+        }))
+        .filter(p => p.total_unidades > 0)
+        .sort((a, b) => b.total_unidades - a.total_unidades)
+        .slice(0, 80);
+}
+
+async function analyzeSourcingWithAI() {
+    if (!sourcingAllRows.length) {
+        document.getElementById('sourcing-error').textContent = 'Subí al menos un CSV primero.';
+        document.getElementById('sourcing-error').style.display = 'block';
+        return;
+    }
+
+    const target   = parseInt(document.getElementById('sourcing-target').value.replace(/\D/g, '')) || 0;
+    const minProd  = parseInt(document.getElementById('sourcing-min-prod').value) || 1;
+    const maxProd  = parseInt(document.getElementById('sourcing-max-prod').value) || 3;
+    const tc       = parseInt(document.getElementById('sourcing-tc').value) || 1500;
+    const shipping = document.querySelector('input[name="sourcing-shipping"]:checked')?.value || 'courier';
+
+    if (!target) {
+        document.getElementById('sourcing-error').textContent = 'Ingresá un objetivo de facturación mensual.';
+        document.getElementById('sourcing-error').style.display = 'block';
+        return;
+    }
+
+    document.getElementById('sourcing-error').style.display = 'none';
+
+    // Parse header from first file to get column indices
+    // We need to re-read the first file header — use the known Nubimetrics columns
+    const knownHeader = [
+        'Categoria_Nivel_1','Categoria_Nivel_2','Categoria_Nivel_3','Categoria_Nivel_4',
+        'Categoria_Nivel_5','Categoria_Nivel_6','Categoria_Nivel_7',
+        'Codigo_Categoria_Nivel1','Codigo_Categoria_Nivel2','Codigo_Categoria_Nivel3',
+        'Codigo_Categoria_Nivel4','Codigo_Categoria_Nivel5','Codigo_Categoria_Nivel6',
+        'Codigo_Categoria_Nivel7','Categoria_Completa','Codigo_de_Publicacion','Sitio',
+        'Titulo_Publicacion','Codigo_Vendedor','Nickname_Vendedor','Tipo_Vendedor',
+        'Categoria_del_Vendedor','Vendedor_No_Profesional','Vendedor_Profesional',
+        'Precio_Original','Moneda','Foto_Publicacion','Link_a_Publicacion',
+        'Esta_en_Oferta','Nuevo','Usado','Estado','Ofrece_MercadoPago',
+        'Provincia','Ciudad','Codigo_Tienda_Oficial','Nombre_Tienda_Oficial',
+        'Ofrece_Envio_Gratis','Ofrece_MercadoEnvios','Marca','catalog_product_id',
+        'catalog_family_name','catalog_name','Compra_Internacional','sku','gtin',
+        'oem','número de pieza','modelo','AI_CODE_ID','AI_Product_Name',
+        'OfreceFlex','OfreceFull','Supermercado','site','category_Id','categoryLevel',
+        'categoryName','categoryPath','categoryLevel1','level1_name','categoryLevel2',
+        'level2_name','categoryLevel3','level3_name','categoryLevel4','level4_name',
+        'categoryLevel5','level5_name','categoryLevel6','level6_name','categoryLevel7',
+        'level7_name','Mes','Tipo_de_Exposicion','Unidades_Vendidas',
+        'Monto_Vendido_Moneda_Local','Monto_Vendido_USD','PrecioMonedaLocal','PrecioUsd',
+        'Cancelaciones_Unidades','Cancelaciones_Moneda_Local','Cancelaciones_USD',
+        'Tasa_de_conversion'
+    ];
+
+    const btn = document.getElementById('sourcing-analyze-btn');
+    btn.disabled = true;
+    btn.textContent = '⏳ Procesando datos...';
+    document.getElementById('sourcing-loading').style.display = 'block';
+    document.getElementById('sourcing-ai-result').style.display = 'none';
+
+    // Abrir pestaña sincrónica (antes del await) para no ser bloqueada por el popup blocker
+    const reportTab = window.open('/sourcing-report', '_blank');
+
+    const products = aggregateSourcingProducts(sourcingAllRows, knownHeader);
+
+    btn.textContent = '⏳ Consultando IA...';
+
+    try {
+        const resp = await fetch('/api/sourcing-analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ products, target_revenue: target, min_products: minProd, max_products: maxProd, shipping, tc }),
+        });
+        document.getElementById('sourcing-loading').style.display = 'none';
+
+        const aiDiv = document.getElementById('sourcing-ai-result');
+        if (!resp.ok) {
+            let errMsg = `Error del servidor (${resp.status})`;
+            try { const e = await resp.json(); errMsg = e.error || errMsg; } catch {}
+            document.getElementById('sourcing-error').textContent = errMsg;
+            document.getElementById('sourcing-error').style.display = 'block';
+        } else {
+            const result = await resp.json();
+            if (result.error) {
+                document.getElementById('sourcing-error').textContent = result.error;
+                document.getElementById('sourcing-error').style.display = 'block';
+            } else {
+                openSourcingReport(result.analysis, { target, minProd, maxProd, shipping, tc });
+            }
+        }
+    } catch (err) {
+        document.getElementById('sourcing-loading').style.display = 'none';
+        document.getElementById('sourcing-error').textContent = 'Error: ' + (err.message || 'Error de conexión. Intentá de nuevo.');
+        document.getElementById('sourcing-error').style.display = 'block';
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '🤖 Analizar y recomendar productos';
     }
 }

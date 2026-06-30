@@ -16,7 +16,7 @@ from flask import Flask, Response, jsonify, redirect, render_template, request, 
 from functools import wraps
 
 from analyzer import analyze_niche
-from meli_api import get_categories, get_subcategories, sample_subcategory, search_meli
+from meli_api import fetch_orders_total, get_categories, get_my_store_items, get_my_user_id, get_subcategories, sample_subcategory, search_meli
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", secrets.token_hex(32))
@@ -848,6 +848,208 @@ def nubi_export():
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
+
+
+@app.route("/api/sales-summary")
+@login_required
+def sales_summary():
+    from datetime import datetime, timezone, timedelta
+    tz_arg = timezone(timedelta(hours=-3))
+    now = datetime.now(tz_arg)
+
+    user_id = get_my_user_id()
+    if not user_id:
+        return jsonify({"error": "No se pudo obtener el usuario de MeLi."}), 502
+
+    fmt = '%Y-%m-%dT%H:%M:%S.000-0300'
+    today_from  = now.replace(hour=0, minute=0, second=0, microsecond=0).strftime(fmt)
+    month_from  = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).strftime(fmt)
+    now_str     = now.strftime(fmt)
+
+    today_amt, today_cnt = fetch_orders_total(user_id, today_from, now_str)
+    month_amt, month_cnt = fetch_orders_total(user_id, month_from, now_str)
+
+    return jsonify({
+        "today": {"amount": today_amt, "orders": today_cnt},
+        "month": {"amount": month_amt, "orders": month_cnt},
+        "as_of": now.strftime('%H:%M'),
+    })
+
+
+@app.route("/api/my-store")
+@login_required
+def my_store():
+    items, error = get_my_store_items()
+    if error:
+        return jsonify({"error": error}), 502
+
+    from collections import defaultdict
+    items = [i for i in items if i["available_quantity"] > 0]
+    active = [i for i in items if i["status"] == "active"]
+    total_revenue = sum(i["revenue"] for i in items)
+    cat_rev = defaultdict(int)
+    for item in items:
+        cat_rev[item["category_id"]] += item["revenue"]
+    top_cats = sorted(cat_rev.items(), key=lambda x: -x[1])[:5]
+
+    return jsonify({
+        "items": items,
+        "total": len(items),
+        "active_count": len(active),
+        "total_revenue_est": total_revenue,
+        "top_categories": [{"cat": c, "revenue": r} for c, r in top_cats],
+    })
+
+
+@app.route("/api/my-store-analyze", methods=["POST"])
+@login_required
+def my_store_analyze():
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        return jsonify({"error": "ANTHROPIC_API_KEY no configurada."}), 500
+
+    data = request.get_json() or {}
+    items = data.get("items", [])
+    target_revenue = data.get("target_revenue", 30_000_000)
+    if not items:
+        return jsonify({"error": "Sin datos de tienda para analizar."}), 400
+
+    top_items = items[:50]
+    total_rev = sum(i["revenue"] for i in items)
+    active_count = sum(1 for i in items if i["status"] == "active")
+
+    summary = {
+        "total_publicaciones": len(items),
+        "publicaciones_activas": active_count,
+        "revenue_historico_total_ARS": total_rev,
+        "objetivo_incremento_mensual_ARS": target_revenue,
+        "top_50_por_revenue_historico": [
+            {
+                "titulo": i["title"],
+                "precio_ARS": i["price"],
+                "unidades_vendidas_historico": i["sold_quantity"],
+                "revenue_estimado_ARS": i["revenue"],
+                "estado": i["status"],
+                "categoria_id": i["category_id"],
+            }
+            for i in top_items
+        ],
+    }
+
+    prompt = (
+        "Sos un experto en e-commerce en MercadoLibre Argentina.\n"
+        "Te paso el portfolio completo de un vendedor activo en MeLi Argentina.\n\n"
+        f"El vendedor tiene {len(items)} publicaciones ({active_count} activas) "
+        f"con un revenue histórico estimado de ${total_rev:,.0f} ARS.\n"
+        f"Su objetivo concreto es sumar ${target_revenue:,.0f} ARS MÁS por mes.\n\n"
+        "Nota: 'revenue_estimado' = precio × unidades_vendidas_historico (total histórico, no mensual).\n"
+        "Usá los precios y productos como referencia de categoría y ticket promedio.\n\n"
+        "Analizá su portfolio y recomendá 1 a 3 productos NUEVOS que debería agregar "
+        "para alcanzar ese objetivo de crecimiento mensual.\n\n"
+        "Para cada producto recomendado:\n"
+        "- **Producto**: nombre/descripción específica y variante\n"
+        "- **Por qué encaja**: relación con lo que ya vende y demanda del mercado\n"
+        "- **Precio de venta sugerido** (ARS)\n"
+        "- **Unidades mensuales estimadas** para alcanzar el objetivo\n"
+        "- **Revenue mensual potencial** de ese producto\n"
+        "- **Veredicto**: 🟢 Alta probabilidad / 🟡 Evaluar / 🔴 Riesgo alto\n\n"
+        "Al final, un **Resumen ejecutivo**:\n"
+        f"- Revenue mensual potencial total de los productos recomendados vs objetivo ${target_revenue:,.0f} ARS\n"
+        "- Qué producto arrancar primero y por qué\n\n"
+        f"Portfolio:\n{json.dumps(summary, ensure_ascii=False, indent=1)}"
+    )
+
+    try:
+        client = anthropic.Anthropic(api_key=api_key)
+        response = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=3000,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return jsonify({"analysis": response.content[0].text})
+    except anthropic.APIError as e:
+        return jsonify({"error": str(e)}), 502
+
+
+@app.route("/sourcing-report")
+@login_required
+def sourcing_report():
+    return render_template("sourcing_report.html")
+
+
+@app.route("/api/sourcing-analyze", methods=["POST"])
+@login_required
+def sourcing_analyze():
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        return jsonify({"error": "ANTHROPIC_API_KEY no configurada."}), 500
+
+    data = request.get_json() or {}
+    products = data.get("products", [])
+    target_revenue = data.get("target_revenue", 0)
+    min_products = data.get("min_products", 1)
+    max_products = data.get("max_products", 3)
+    shipping = data.get("shipping", "courier")
+    tc = data.get("tc", 1500)
+
+    if not products:
+        return jsonify({"error": "Sin datos de productos para analizar."}), 400
+
+    shipping_label = "Courier (aéreo)" if shipping == "courier" else "Marítimo (contenedor)"
+    shipping_criteria = (
+        "COURIER (aéreo): priorizar productos livianos (<1kg), compactos, alto valor/peso. "
+        "Evitar productos voluminosos o pesados. Ideal para electrónica pequeña, accesorios, sensores, módulos."
+        if shipping == "courier"
+        else
+        "MARÍTIMO: pueden ser productos más grandes o pesados (hasta 20-30kg, voluminosos). "
+        "Mayor plazo de entrega (30-45 días). Ideal para herramientas, equipos, muebles, productos de mayor volumen."
+    )
+
+    products_str = json.dumps(products[:50], ensure_ascii=False, indent=1)
+
+    prompt = (
+        f"Sos un experto en sourcing y e-commerce en MercadoLibre Argentina.\n"
+        f"Te paso datos reales de demanda de Nubimetrics (ventas históricas de MeLi Argentina).\n\n"
+        f"CRITERIOS DEL VENDEDOR:\n"
+        f"- Objetivo de facturación mensual adicional: ${target_revenue:,.0f} ARS\n"
+        f"- Cantidad de productos a lanzar: entre {min_products} y {max_products}\n"
+        f"- Método de importación: {shipping_label}\n"
+        f"  → {shipping_criteria}\n"
+        f"- Tipo de cambio referencia: ${tc:,.0f} ARS/USD\n\n"
+        f"DATOS DE MERCADO (productos agrupados por título, ordenados por demanda total):\n"
+        f"Cada producto incluye: título, precio_promedio_ARS, total_unidades, total_revenue_ARS, "
+        f"vendedores_únicos, pct_full, categoría, archivo_fuente.\n\n"
+        f"{products_str}\n\n"
+        f"TAREA:\n"
+        f"Seleccioná los mejores {min_products} a {max_products} productos de esta lista para "
+        f"que el vendedor los importe y venda en MeLi, cumpliendo:\n"
+        f"1. Alcanzar ${target_revenue:,.0f} ARS/mes adicionales en total\n"
+        f"2. Apto para importar vía {shipping_label}\n"
+        f"3. Competencia manejable (no dominada por pocos vendedores con alta concentración)\n"
+        f"4. Demanda probada en datos reales de Nubimetrics\n\n"
+        f"Para cada producto recomendado:\n"
+        f"- **Producto**: nombre específico y categoría\n"
+        f"- **Demanda del mercado**: unidades totales, revenue total del mercado, vendedores compitiendo\n"
+        f"- **Mi captura estimada**: si capturo X% = Y unidades = $Z ARS/mes\n"
+        f"- **Precio de venta sugerido** en ARS\n"
+        f"- **FOB estimado**: rango en USD para producto terminado de China\n"
+        f"- **Apto para {shipping_label}**: peso/tamaño estimado y por qué aplica\n"
+        f"- **Veredicto**: 🟢 Alta oportunidad / 🟡 Evaluar / 🔴 Evitar\n\n"
+        f"Al final, una tabla **Resumen Ejecutivo**:\n"
+        f"| Producto | Precio sugerido | U/mes estimadas | Revenue mensual |\n"
+        f"Con TOTAL y diferencia vs objetivo ${target_revenue:,.0f} ARS (+/-)."
+    )
+
+    try:
+        client = anthropic.Anthropic(api_key=api_key)
+        response = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=3000,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return jsonify({"analysis": response.content[0].text})
+    except anthropic.APIError as e:
+        return jsonify({"error": str(e)}), 502
 
 
 if __name__ == "__main__":

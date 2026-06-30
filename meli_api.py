@@ -378,6 +378,116 @@ def sample_subcategory(category_id, limit=5):
     }
 
 
+def get_my_user_id():
+    resp = _get(f"{BASE_URL}/users/me", timeout=10)
+    if not resp.ok:
+        return None
+    return resp.json().get("id")
+
+
+def fetch_orders_total(user_id, date_from, date_to):
+    """Returns (total_amount, order_count) for paid orders in the given date range."""
+    total_amount = 0.0
+    order_count = 0
+    offset = 0
+    while True:
+        r = _get(f"{BASE_URL}/orders/search", params={
+            "seller": user_id,
+            "order.date_created.from": date_from,
+            "order.date_created.to": date_to,
+            "limit": 50,
+            "offset": offset,
+        }, timeout=15)
+        if not r.ok:
+            log.warning("orders/search failed: %s %s", r.status_code, r.text[:200])
+            break
+        data = r.json()
+        results = data.get("results", [])
+        if not results:
+            break
+        for order in results:
+            status = order.get("status", "")
+            if status == "paid":
+                total_amount += float(order.get("total_amount", 0) or 0)
+                order_count += 1
+            elif status == "partially_refunded":
+                # paid_amount ya descuenta lo reembolsado
+                total_amount += float(order.get("paid_amount", 0) or 0)
+                order_count += 1
+        total = data.get("paging", {}).get("total", 0)
+        offset += len(results)
+        if offset >= total:
+            break
+        time.sleep(0.05)
+    return round(total_amount), order_count
+
+
+def get_my_store_items():
+    """Fetch all seller's own items with sold_quantity via authenticated API."""
+    resp = _get(f"{BASE_URL}/users/me", timeout=10)
+    if not resp.ok:
+        return None, "Token inválido. Actualizá el MELI_ACCESS_TOKEN."
+    user_id = resp.json().get("id")
+    if not user_id:
+        return None, "No se pudo obtener el user_id."
+
+    all_ids = []
+    offset = 0
+    while True:
+        r = _get(
+            f"{BASE_URL}/users/{user_id}/items/search",
+            params={"limit": 100, "offset": offset},
+            timeout=15,
+        )
+        if not r.ok:
+            break
+        data = r.json()
+        results = data.get("results", [])
+        if not results:
+            break
+        all_ids.extend(results)
+        total = data.get("paging", {}).get("total", 0)
+        offset += len(results)
+        if offset >= total:
+            break
+        time.sleep(0.1)
+
+    if not all_ids:
+        return [], None
+
+    attrs = "id,title,price,sold_quantity,available_quantity,status,category_id,thumbnail,permalink"
+    items = []
+    for i in range(0, len(all_ids), 20):
+        batch = all_ids[i:i+20]
+        r = _get(
+            f"{BASE_URL}/items",
+            params={"ids": ",".join(batch), "attributes": attrs},
+            timeout=15,
+        )
+        if r.ok:
+            for entry in r.json():
+                if entry.get("code") == 200:
+                    b = entry.get("body", {})
+                    price = b.get("price", 0) or 0
+                    sold  = b.get("sold_quantity", 0) or 0
+                    items.append({
+                        "id":                 b.get("id", ""),
+                        "title":              b.get("title", ""),
+                        "price":              price,
+                        "sold_quantity":      sold,
+                        "available_quantity": b.get("available_quantity", 0) or 0,
+                        "status":             b.get("status", ""),
+                        "category_id":        b.get("category_id", ""),
+                        "thumbnail":          (b.get("thumbnail") or "").replace("http://", "https://"),
+                        "permalink":          b.get("permalink", ""),
+                        "revenue":            round(price * sold),
+                    })
+        time.sleep(0.15)
+
+    items.sort(key=lambda x: -x["revenue"])
+    return items, None
+
+
 def search_alibaba(query, limit=20):
     token = os.environ.get("APIFY_API_TOKEN")
     if not token or not query:
