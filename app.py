@@ -1035,31 +1035,21 @@ def sourcing_analyze():
         f"- **FOB estimado**: USD X–Y por unidad (China)\n"
         f"- **Apto para {shipping_label}**: peso/tamaño estimado y por qué aplica\n"
         f"- **Veredicto**: 🟢 Alta oportunidad / 🟡 Evaluar / 🔴 Evitar\n\n"
-        f"## Estrategia de venta por producto\n"
-        f"Para cada producto recomendado, una estrategia concreta con:\n"
-        f"- **Precio de entrada**: cómo posicionarse vs. la competencia (más barato, igual, premium)\n"
-        f"- **Logística**: ¿conviene MeLi Full? ¿envío gratis desde qué precio?\n"
-        f"- **Diferenciación**: qué mejorar respecto a los competidores actuales (título, fotos, ficha técnica, bundle)\n"
-        f"- **Publicidad**: ¿Product Ads desde el día 1? ¿cuánto invertir? ¿qué keywords?\n"
-        f"- **Rampa de ventas**: estimación realista mes 1 / mes 3 / mes 6 en unidades\n\n"
-        f"IMPORTANTE — al final de todo el análisis, incluí ÚNICAMENTE este bloque JSON "
-        f"(sin texto después):\n"
+        f"Al terminar el análisis, cerrá con exactamente este bloque JSON (sin texto después):\n"
         f"```json\n"
-        f"[{{\"producto\": \"Nombre corto\", \"precio_ars\": 120000, \"unidades_mes\": 25, \"revenue_mes\": 3000000}}, ...]\n"
+        f"[{{\"producto\": \"Nombre corto\", \"precio_ars\": 120000, \"unidades_mes\": 25, \"revenue_mes\": 3000000}}]\n"
         f"```\n"
-        f"Reglas del JSON:\n"
-        f"- Un objeto por cada producto recomendado\n"
-        f"- precio_ars: precio de venta sugerido en ARS (entero)\n"
-        f"- unidades_mes: cuántas unidades/mes necesita vender para su parte del objetivo (entero)\n"
-        f"- revenue_mes = precio_ars × unidades_mes\n"
-        f"- La suma de revenue_mes de todos los productos debe aproximarse a ${target_revenue:,.0f} ARS"
+        f"Un objeto por producto recomendado. precio_ars = precio sugerido (entero). "
+        f"unidades_mes = unidades que necesita vender para su parte del objetivo. "
+        f"revenue_mes = precio_ars × unidades_mes. "
+        f"La suma de revenue_mes debe aproximarse a ${target_revenue:,.0f} ARS."
     )
 
     try:
         client = anthropic.Anthropic(api_key=api_key)
         response = client.messages.create(
             model="claude-sonnet-4-6",
-            max_tokens=4000,
+            max_tokens=3000,
             messages=[{"role": "user", "content": prompt}],
         )
         text = response.content[0].text
