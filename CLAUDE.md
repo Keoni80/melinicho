@@ -8,7 +8,7 @@ Market analysis tool for finding profitable niches on MercadoLibre Argentina.
 - **Database:** SQLite (melichnicho.db)
 - **AI:** Claude API (`claude-sonnet-4-6`) for niche analysis
 - **Search:** Apify scraper as primary search (MeLi API search is blocked)
-- **Deploy:** Railway via `~/.railway/bin/railway up --detach --service melichnicho` (autodeploy not available on free plan)
+- **Deploy:** Railway — autodeploy on push to `master`; manual fallback: `~/.railway/bin/railway up --detach --service melichnicho`
 - **Dependencies:** `flask`, `requests`, `anthropic`, `gunicorn`, `openpyxl`
 
 ## MercadoLibre API (critical constraints)
@@ -61,10 +61,11 @@ Token refresh in `_get()` handles both 401 and 403.
 - `Procfile` — Gunicorn config (timeout 180s)
 
 ## Deploy
+Autodeploy via GitHub push IS working (triggers automatically on push to `master`). Manual deploy if needed:
 ```bash
-railway up --detach --service melichnicho
+~/.railway/bin/railway up --detach --service melichnicho
 ```
-Railway binary is at `/usr/local/bin/railway`. Autodeploy via GitHub push IS working (triggers automatically on push to master).
+Railway binary is at `~/.railway/bin/railway`.
 Needs `NODE_EXTRA_CA_CERTS` env var set if machine has AVG antivirus (SSL interception).
 
 ## Known issues
