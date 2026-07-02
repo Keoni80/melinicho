@@ -116,7 +116,8 @@ Needs `NODE_EXTRA_CA_CERTS` env var set if machine has AVG antivirus (SSL interc
 **Objetivo field formatting:** Uses `toLocaleString('es-AR')` for Argentine period-separated thousands (e.g., `30.000.000`). Stripped with `.replace(/\D/g, '')` before sending to API.
 
 **CSV processing (entirely client-side):**
-- Multiple files supported — rows are merged into a single dataset
+- Multiple files supported — stored per file in `sourcingFiles = [{id, name, rows}]` (app.js), flattened with `flatMap` at analyze time
+- Each file in the list has a ✕ button (`removeSourcingFile()`) to drop it from the pool; removing all files hides the criteria panel
 - `parseCSV(text)` handles quoted fields
 - `aggregateSourcingProducts(rows, headerRow)` groups by `Titulo_Publicacion`, sums units/revenue across months, returns top 50 products sorted by units sold
 - Only the aggregated ~50 products are sent to the server (avoids Railway timeout on large files)
@@ -229,7 +230,7 @@ Needs `NODE_EXTRA_CA_CERTS` env var set if machine has AVG antivirus (SSL interc
 ## Nubimetrics data files
 
 Los CSVs de Nubimetrics **no están en este repo** (demasiado grandes: 588 MB total, archivos hasta 97 MB).
-Están guardados en **Google Drive** del usuario (jderoberto@gmail.com).
+Están en **Google Drive** del usuario (jderoberto@gmail.com) y copia local en `~/Downloads/data/`.
 
 Categorías disponibles (2026-06-30):
 - Alarmas y sensores (86 MB), Amplificadores (1.2 MB), Barbería (16 MB)
@@ -237,6 +238,12 @@ Categorías disponibles (2026-06-30):
 - Herramientas eléctricas (97 MB), Instrumentos a cuerda (37 MB), Mochilas notebook (3.4 MB)
 - OBD (4.1 MB), Pilates y yoga (88 MB), Proyectores y pantallas (7.6 MB)
 - Set de destornilladores (8.6 MB), Teclados musicales (2.3 MB), Tester y multímetros (54 MB)
+
+Estructura de los CSVs (verificado 2026-07-02):
+- Filas **diarias** (columna `Mes` = fecha YYYY-MM-DD), cubren un mes calendario. Para totales mensuales se suma; para precio real usar `Monto_Vendido / Unidades_Vendidas` — **nunca** `PrecioMonedaLocal` máximo (puede ser 2× el precio real de venta)
+- `Nickname_Vendedor` viene **anonimizado** (ej. "gorrion.cobre.ineficaz"); títulos de producto reales; `AI_Product_Name` vacío
+- Duplicados exactos conocidos: `timbres.csv` = `alarmas y sensores.csv`; `pilates y yoga.csv` = `fitness y musculacion.csv`
+- Nubimetrics también exporta el catálogo de **un vendedor puntual** como XLSX (columnas: Título, Marca, Ventas en $, Ventas en Unid., Precio Promedio, Fulfillment, etc.) — guardados en `~/Downloads/Competidores/` (TODOMICRO, GENEVE). Unidades redondeadas en bandas. Reemplaza el scraping Apify del módulo Competidores a costo $0
 
 ---
 
