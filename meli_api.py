@@ -123,26 +123,47 @@ def _search_apify(query="", category_id="", max_results=100):
         log.error("APIFY_API_TOKEN not set")
         return None
 
+    if not query and category_id:
+        # El actor de Apify solo busca por keyword: usar el nombre de la
+        # categoría como keyword (/categories/{id} sigue accesible desde servidores)
+        try:
+            resp = _get(f"{BASE_URL}/categories/{category_id}", timeout=10)
+            data = resp.json()
+            # Nombres de hoja tipo "De Mano" u "Otros" son malos keywords:
+            # combinar los últimos dos niveles del path (ej. "taladros de mano").
+            # En minúsculas: el actor devuelve 0 items con keywords capitalizadas
+            path = [p.get("name", "") for p in data.get("path_from_root", [])]
+            query = (" ".join(path[-2:]) if len(path) >= 2 else data.get("name", "")).lower()
+            log.info("Apify: categoría %s resuelta a keyword '%s'", category_id, query)
+        except Exception as e:
+            log.error("Apify: no se pudo resolver categoría %s: %s", category_id, e)
+
     if not query:
+        log.error("Apify: búsqueda sin keyword ni categoría resoluble")
         return None
 
     log.info("Apify scraper: keyword='%s'", query)
-    try:
-        resp = requests.post(
-            "https://api.apify.com/v2/acts/karamelo~mercadolibre-scraper-espanol-castellano/run-sync-get-dataset-items",
-            params={"token": token},
-            json={
-                "keyword": query,
-                "country": "https://listado.mercadolibre.com.ar/",
-                "maxPages": 1,
-            },
-            timeout=160,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-    except Exception as e:
-        log.error("Apify search failed: %s", e)
-        return None
+    data = []
+    for attempt in (1, 2):  # el actor a veces devuelve 0 items; un reintento suele alcanzar
+        try:
+            resp = requests.post(
+                "https://api.apify.com/v2/acts/karamelo~mercadolibre-scraper-espanol-castellano/run-sync-get-dataset-items",
+                params={"token": token},
+                json={
+                    "keyword": query,
+                    "country": "https://listado.mercadolibre.com.ar/",
+                    "maxPages": 1,
+                },
+                timeout=160,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception as e:
+            log.error("Apify search failed (intento %d): %s", attempt, e)
+            return None
+        if data:
+            break
+        log.warning("Apify devolvió 0 items para '%s' (intento %d)", query, attempt)
 
     log.info("Apify returned %d items", len(data))
     import re
