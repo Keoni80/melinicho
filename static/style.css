@@ -598,6 +598,12 @@ main {
     cursor: pointer;
     text-decoration: underline;
 }
+.sourcing-tc-hint {
+    display: block;
+    margin-top: .3rem;
+    color: var(--muted, #999);
+    font-size: .75rem;
+}
 .sourcing-file-item {
     display: flex;
     align-items: center;

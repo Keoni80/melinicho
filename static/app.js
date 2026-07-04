@@ -111,6 +111,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // Sourcing
     document.getElementById('sourcing-btn').addEventListener('click', () => {
         document.getElementById('sourcing-modal').style.display = 'flex';
+        fetchDolarOficial();
+    });
+    document.getElementById('sourcing-tc').addEventListener('input', () => {
+        sourcingTcManual = true;
+        document.getElementById('sourcing-tc-hint').textContent = 'Valor manual';
     });
     document.getElementById('close-sourcing-modal').addEventListener('click', () => {
         document.getElementById('sourcing-modal').style.display = 'none';
@@ -1172,6 +1177,24 @@ function writeSourcingReport(analysisHtml, simHtml, chips) {
 
 let sourcingFiles = [];     // [{id, name, rows}] — filas sin header, un entry por CSV
 let sourcingFileSeq = 0;    // id incremental para poder eliminar archivos del pool
+let sourcingTcManual = false;   // el usuario editó el TC a mano → no pisarlo con el valor de la API
+
+async function fetchDolarOficial() {
+    const hint = document.getElementById('sourcing-tc-hint');
+    if (sourcingTcManual) return;
+    hint.textContent = 'Consultando dólar oficial…';
+    try {
+        const resp = await fetch('https://dolarapi.com/v1/dolares/oficial');
+        if (!resp.ok) throw new Error(resp.status);
+        const d = await resp.json();
+        if (sourcingTcManual) return; // editó mientras cargaba
+        document.getElementById('sourcing-tc').value = d.venta;
+        const fecha = new Date(d.fechaActualizacion).toLocaleDateString('es-AR', { day: 'numeric', month: 'numeric' });
+        hint.textContent = `Oficial venta $${d.venta.toLocaleString('es-AR')} · actualizado ${fecha} (dolarapi.com)`;
+    } catch (e) {
+        hint.textContent = 'No se pudo obtener el dólar oficial — ingresalo a mano';
+    }
+}
 
 function handleSourcingFiles(files) {
     if (!files || !files.length) return;
