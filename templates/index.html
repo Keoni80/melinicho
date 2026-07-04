@@ -32,6 +32,7 @@
             <button id="sourcing-btn" class="btn-sourcing" title="Subí reportes de Nubimetrics y encontrá los mejores productos para importar y vender">🎯 Sourcing</button>
             <button id="nicho-btn" class="btn-nicho" title="Subí reportes de Nubimetrics y encontrá productos con alta rotación y pocos vendedores">💎 Nicho</button>
             <button id="comp-btn" class="btn-comp" title="Subí catálogos de vendedores exportados de Nubimetrics y analizá a tus competidores">⚔️ Competidores</button>
+            <button id="buscomp-btn" class="btn-buscomp" title="Subí CSVs de categoría de Nubimetrics y encontrá vendedores con productos estrella traíbles por courier">🕵️ Buscar Competidores</button>
         </div>
 
         <button id="filter-toggle" class="filter-toggle">
@@ -445,6 +446,54 @@
 
             <div id="comp-loading" style="display:none;padding:1rem 0;color:#aaa">🔄 Analizando con IA, puede tardar unos segundos...</div>
             <div id="comp-error" class="error-msg" style="display:none"></div>
+        </div>
+    </div>
+</div>
+
+<!-- Buscador de Competidores Modal -->
+<div id="buscomp-modal" class="modal-overlay" style="display:none" role="dialog" aria-modal="true" aria-labelledby="buscomp-modal-title">
+    <div class="modal-box modal-box-wide">
+        <div class="modal-header">
+            <h3 id="buscomp-modal-title">🕵️ Buscador de Competidores — Vendedores con productos estrella</h3>
+            <button id="close-buscomp-modal" class="modal-close" aria-label="Cerrar">✕</button>
+        </div>
+        <div class="ai-content" style="padding:1.25rem">
+            <div id="buscomp-upload-area">
+                <p style="margin-bottom:.6rem;color:#aaa">Subí uno o más CSVs de categoría exportados desde Nubimetrics: <strong style="color:#FFE600">Mercado Avanzado → Items → Exportar CSV</strong>. Busca vendedores concentrados en pocos productos héroe (los modelos a copiar), no cola larga tipo TODOMICRO.</p>
+                <p style="margin-bottom:1rem;color:#666;font-size:.82rem">Los archivos se procesan en el browser — no se suben al servidor.</p>
+                <div id="buscomp-dropzone" class="sourcing-dropzone">
+                    <span style="font-size:1.8rem">📂</span>
+                    <span>Arrastrá los CSV acá o <label for="buscomp-file-input" class="sourcing-file-label">elegí archivos</label></span>
+                    <input type="file" id="buscomp-file-input" accept=".csv" multiple style="display:none">
+                </div>
+                <div id="buscomp-file-list" style="margin-top:.75rem"></div>
+            </div>
+
+            <div id="buscomp-criteria" style="display:none;margin-top:1.25rem">
+                <div class="sourcing-criteria-grid">
+                    <div class="filter-group">
+                        <label for="buscomp-min-conc">⭐ Concentración mínima top3 (%)</label>
+                        <input type="number" id="buscomp-min-conc" class="keyword-input" value="60" min="10" max="100">
+                    </div>
+                    <div class="filter-group">
+                        <label for="buscomp-min-units">🔄 Rotación mínima estrella (u/mes)</label>
+                        <input type="number" id="buscomp-min-units" class="keyword-input" value="100" min="1">
+                    </div>
+                    <div class="filter-group">
+                        <label for="buscomp-min-rev">💰 Facturación mínima (ARS/mes)</label>
+                        <input type="text" id="buscomp-min-rev" class="keyword-input" value="10.000.000" inputmode="numeric">
+                    </div>
+                    <div class="filter-group">
+                        <label for="buscomp-tc">💵 Tipo de cambio (ARS/USD)</label>
+                        <input type="number" id="buscomp-tc" class="keyword-input" value="1500" min="1">
+                        <small id="buscomp-tc-hint" class="sourcing-tc-hint"></small>
+                    </div>
+                </div>
+                <button id="buscomp-analyze-btn" class="btn-ai" style="margin-top:1.25rem">🕵️ Buscar competidores modelo</button>
+            </div>
+
+            <div id="buscomp-loading" style="display:none;padding:1rem 0;color:#aaa">🔄 Analizando con IA, puede tardar unos segundos...</div>
+            <div id="buscomp-error" class="error-msg" style="display:none"></div>
         </div>
     </div>
 </div>

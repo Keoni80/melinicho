@@ -199,6 +199,41 @@ document.addEventListener('DOMContentLoaded', () => {
         handleCompFiles(e.dataTransfer.files);
     });
     cdz.addEventListener('click', () => document.getElementById('comp-file-input').click());
+
+    // Buscador de Competidores
+    document.getElementById('buscomp-btn').addEventListener('click', () => {
+        document.getElementById('buscomp-modal').style.display = 'flex';
+        fetchDolarInto('buscomp-tc', 'buscomp-tc-hint');
+    });
+    document.getElementById('close-buscomp-modal').addEventListener('click', () => {
+        document.getElementById('buscomp-modal').style.display = 'none';
+    });
+    document.getElementById('buscomp-modal').addEventListener('click', e => {
+        if (e.target === e.currentTarget) document.getElementById('buscomp-modal').style.display = 'none';
+    });
+    document.getElementById('buscomp-file-input').addEventListener('change', e => {
+        handleBuscompFiles(e.target.files);
+    });
+    document.getElementById('buscomp-tc').addEventListener('input', () => {
+        dolarManual['buscomp-tc'] = true;
+        document.getElementById('buscomp-tc-hint').textContent = 'Valor manual';
+    });
+    document.getElementById('buscomp-min-rev').addEventListener('input', e => {
+        const digits = e.target.value.replace(/\D/g, '');
+        e.target.value = digits ? parseInt(digits, 10).toLocaleString('es-AR') : '';
+    });
+    document.getElementById('buscomp-analyze-btn').addEventListener('click', analyzeBuscompWithAI);
+
+    // Buscador de Competidores drag & drop
+    const bdz = document.getElementById('buscomp-dropzone');
+    bdz.addEventListener('dragover', e => { e.preventDefault(); bdz.classList.add('drag-over'); });
+    bdz.addEventListener('dragleave', () => bdz.classList.remove('drag-over'));
+    bdz.addEventListener('drop', e => {
+        e.preventDefault();
+        bdz.classList.remove('drag-over');
+        handleBuscompFiles(e.dataTransfer.files);
+    });
+    bdz.addEventListener('click', () => document.getElementById('buscomp-file-input').click());
 });
 
 // ─── Sales Dashboard ──────────────────────────────────────
@@ -1856,5 +1891,243 @@ async function analyzeCompWithAI() {
     } finally {
         btn.disabled = false;
         btn.textContent = '⚔️ Analizar competidores';
+    }
+}
+
+// ─── Buscador de Competidores Module ──────────────────────
+// CSVs de categoría de Nubimetrics → vendedores concentrados en productos estrella
+
+let buscompFiles = [];
+let buscompFileSeq = 0;
+
+function handleBuscompFiles(files) {
+    if (!files || !files.length) return;
+    Array.from(files).forEach(file => {
+        const reader = new FileReader();
+        reader.onload = e => {
+            const rows = parseCSV(e.target.result);
+            if (rows.length > 1) {
+                const id = ++buscompFileSeq;
+                buscompFiles.push({ id, name: file.name, rows: rows.slice(1) });
+                addBuscompFileItem(id, file.name, rows.length - 1);
+                document.getElementById('buscomp-criteria').style.display = 'block';
+            }
+        };
+        reader.readAsText(file, 'utf-8');
+    });
+}
+
+function addBuscompFileItem(id, name, rowCount) {
+    const list = document.getElementById('buscomp-file-list');
+    const item = document.createElement('div');
+    item.className = 'sourcing-file-item';
+    item.dataset.fileId = id;
+    item.innerHTML = `
+        <span class="sourcing-file-ok">✓</span>
+        <span class="sourcing-file-name">${name}</span>
+        <span class="sourcing-file-count">${rowCount.toLocaleString('es-AR')} registros</span>
+        <button class="sourcing-file-remove" title="Quitar archivo">✕</button>
+    `;
+    item.querySelector('.sourcing-file-remove').addEventListener('click', () => {
+        buscompFiles = buscompFiles.filter(f => f.id !== id);
+        item.remove();
+        if (!buscompFiles.length) {
+            document.getElementById('buscomp-criteria').style.display = 'none';
+            document.getElementById('buscomp-error').style.display = 'none';
+        }
+    });
+    list.appendChild(item);
+}
+
+function aggregateBuscompSellers(rows) {
+    // Mismos índices de columna que Sourcing/Nicho (header conocido de Nubimetrics)
+    const h = [
+        'Categoria_Nivel_1','Categoria_Nivel_2','Categoria_Nivel_3','Categoria_Nivel_4',
+        'Categoria_Nivel_5','Categoria_Nivel_6','Categoria_Nivel_7',
+        'Codigo_Categoria_Nivel1','Codigo_Categoria_Nivel2','Codigo_Categoria_Nivel3',
+        'Codigo_Categoria_Nivel4','Codigo_Categoria_Nivel5','Codigo_Categoria_Nivel6',
+        'Codigo_Categoria_Nivel7','Categoria_Completa','Codigo_de_Publicacion','Sitio',
+        'Titulo_Publicacion','Codigo_Vendedor','Nickname_Vendedor','Tipo_Vendedor',
+        'Categoria_del_Vendedor','Vendedor_No_Profesional','Vendedor_Profesional',
+        'Precio_Original','Moneda','Foto_Publicacion','Link_a_Publicacion',
+        'Esta_en_Oferta','Nuevo','Usado','Estado','Ofrece_MercadoPago',
+        'Provincia','Ciudad','Codigo_Tienda_Oficial','Nombre_Tienda_Oficial',
+        'Ofrece_Envio_Gratis','Ofrece_MercadoEnvios','Marca','catalog_product_id',
+        'catalog_family_name','catalog_name','Compra_Internacional','sku','gtin',
+        'oem','número de pieza','modelo','AI_CODE_ID','AI_Product_Name',
+        'OfreceFlex','OfreceFull','Supermercado','site','category_Id','categoryLevel',
+        'categoryName','categoryPath','categoryLevel1','level1_name','categoryLevel2',
+        'level2_name','categoryLevel3','level3_name','categoryLevel4','level4_name',
+        'categoryLevel5','level5_name','categoryLevel6','level6_name','categoryLevel7',
+        'level7_name','Mes','Tipo_de_Exposicion','Unidades_Vendidas',
+        'Monto_Vendido_Moneda_Local','Monto_Vendido_USD','PrecioMonedaLocal','PrecioUsd',
+        'Cancelaciones_Unidades','Cancelaciones_Moneda_Local','Cancelaciones_USD',
+        'Tasa_de_conversion'
+    ];
+    const ci = k => h.findIndex(c => c.toLowerCase().includes(k.toLowerCase()));
+    const iTitle  = ci('Titulo_Publicacion');
+    const iUnits  = ci('unidades_vendidas');
+    const iRev    = ci('monto_vendido_moneda_local');
+    const iSeller = ci('nickname_vendedor');
+
+    const clean = v => (v || '').trim();
+    const fnum  = v => { try { return parseFloat(v) || 0; } catch { return 0; } };
+    const fint  = v => { try { return parseInt(v) || 0; } catch { return 0; } };
+
+    const sellers = {};
+    for (const r of rows) {
+        const seller = clean(r[iSeller]);
+        const title  = clean(r[iTitle]).slice(0, 80);
+        if (!seller || !title) continue;
+        const units = fint(r[iUnits]);
+        const rev   = fnum(r[iRev]);
+
+        if (!sellers[seller]) sellers[seller] = { revenue: 0, units: 0, products: {} };
+        const s = sellers[seller];
+        s.revenue += rev;
+        s.units   += units;
+        if (!s.products[title]) s.products[title] = { units: 0, revenue: 0 };
+        s.products[title].units   += units;
+        s.products[title].revenue += rev;
+    }
+
+    return Object.entries(sellers).map(([seller, s]) => {
+        const prods = Object.entries(s.products)
+            .map(([titulo, p]) => ({
+                titulo,
+                unidades_mes: p.units,
+                revenue_mes:  Math.round(p.revenue),
+                precio_real:  p.units > 0 ? Math.round(p.revenue / p.units) : 0,
+            }))
+            .sort((a, b) => b.revenue_mes - a.revenue_mes);
+        const top3rev = prods.slice(0, 3).reduce((acc, p) => acc + p.revenue_mes, 0);
+        return {
+            vendedor:       seller,
+            revenue_mes:    Math.round(s.revenue),
+            unidades_mes:   s.units,
+            publicaciones:  prods.length,
+            top1_share:     s.revenue > 0 ? Math.round(prods[0].revenue_mes / s.revenue * 100) : 0,
+            top3_share:     s.revenue > 0 ? Math.round(top3rev / s.revenue * 100) : 0,
+            estrellas:      prods.slice(0, 3),
+        };
+    }).sort((a, b) => b.revenue_mes - a.revenue_mes);
+}
+
+function buildBuscompChips(minConc, minUnits, minRev, tc, nFiles) {
+    const now = new Date().toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' });
+    return `
+        <span class="chip">⭐ Top3 <strong>≥ ${minConc}%</strong></span>
+        <span class="chip">🔄 Estrella <strong>≥ ${minUnits} u/mes</strong></span>
+        <span class="chip">💰 Facturación <strong>≥ $${minRev.toLocaleString('es-AR')}</strong></span>
+        <span class="chip">💵 TC <strong>${tc.toLocaleString('es-AR')}</strong></span>
+        <span class="chip">📂 <strong>${nFiles}</strong> archivo${nFiles > 1 ? 's' : ''}</span>
+        <span class="chip">🕐 ${now}</span>`;
+}
+
+function buildBuscompTableHtml(candidates, minConc, minUnits) {
+    const fmtARS = n => '$' + Math.round(n).toLocaleString('es-AR');
+    const fmtM = n => n >= 1e9 ? '$' + (n / 1e9).toFixed(1) + 'B' : '$' + (n / 1e6).toFixed(1) + 'M';
+    if (!candidates.length) {
+        return `<div class="sim-box"><div class="sim-title">🕵️ Vendedores con producto estrella</div>
+            <p style="padding:1rem 1.25rem">Ningún vendedor cumple los criterios. Probá relajar la concentración o la rotación mínima.</p></div>`;
+    }
+    const rows = candidates.slice(0, 30).map((v, i) => {
+        const e = v.estrellas[0] || {};
+        return `
+        <tr>
+            <td>${i + 1}</td>
+            <td class="sim-prod">${v.vendedor}</td>
+            <td>${fmtM(v.revenue_mes)}</td>
+            <td>${v.publicaciones}</td>
+            <td class="sim-units">${v.top3_share}%</td>
+            <td>${e.titulo || '—'}</td>
+            <td>${(e.unidades_mes || 0).toLocaleString('es-AR')}</td>
+            <td>${fmtARS(e.precio_real || 0)}</td>
+        </tr>`;
+    }).join('');
+    return `
+    <div class="sim-box">
+        <div class="sim-title">🕵️ Vendedores concentrados — top3 ≥ ${minConc}% y estrella ≥ ${minUnits} u/mes (${candidates.length} encontrados)</div>
+        <table class="sim-table">
+            <thead><tr>
+                <th>#</th><th>Vendedor</th><th>Revenue/mes</th><th>Pubs</th><th>Top3</th><th>Producto estrella</th><th>Unid/mes</th><th>Precio real</th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+        </table>
+        <p style="padding:.6rem 1.25rem;color:#7A8499;font-size:.78rem">⚠️ Los nicknames de Nubimetrics vienen anonimizados: para identificar al vendedor real, buscá el título del producto estrella en MercadoLibre. Precio real = monto vendido ÷ unidades.</p>
+    </div>`;
+}
+
+function writeBuscompReport(analysisHtml, tableHtml, chips) {
+    localStorage.setItem('buscomp_report_data', JSON.stringify({ html: analysisHtml + tableHtml, chips }));
+}
+
+async function analyzeBuscompWithAI() {
+    const allRows = buscompFiles.flatMap(f => f.rows);
+    if (!allRows.length) {
+        document.getElementById('buscomp-error').textContent = 'Subí al menos un CSV primero.';
+        document.getElementById('buscomp-error').style.display = 'block';
+        return;
+    }
+
+    const minConc  = parseInt(document.getElementById('buscomp-min-conc').value) || 60;
+    const minUnits = parseInt(document.getElementById('buscomp-min-units').value) || 100;
+    const minRev   = parseInt(document.getElementById('buscomp-min-rev').value.replace(/\D/g, '')) || 10000000;
+    const tc       = parseInt(document.getElementById('buscomp-tc').value) || 1500;
+
+    document.getElementById('buscomp-error').style.display = 'none';
+    const btn = document.getElementById('buscomp-analyze-btn');
+    btn.disabled = true;
+    btn.textContent = '⏳ Procesando datos...';
+    document.getElementById('buscomp-loading').style.display = 'block';
+
+    // Pestaña sincrónica antes del await (popup blocker)
+    window.open('/buscomp-report', '_blank');
+
+    const all = aggregateBuscompSellers(allRows);
+    const candidates = all.filter(v =>
+        v.revenue_mes >= minRev &&
+        v.top3_share >= minConc &&
+        (v.estrellas[0]?.unidades_mes || 0) >= minUnits
+    );
+
+    const chips = buildBuscompChips(minConc, minUnits, minRev, tc, buscompFiles.length);
+    const tableHtml = buildBuscompTableHtml(candidates, minConc, minUnits);
+    writeBuscompReport('', tableHtml, chips);
+
+    btn.textContent = '⏳ Consultando IA...';
+
+    try {
+        const resp = await fetch('/api/buscomp-analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                sellers: candidates.slice(0, 30),
+                min_conc: minConc,
+                min_units: minUnits,
+                min_rev: minRev,
+                tc,
+            }),
+        });
+        document.getElementById('buscomp-loading').style.display = 'none';
+
+        if (!resp.ok) {
+            let errMsg = `Error del servidor (${resp.status})`;
+            try { const e = await resp.text(); errMsg = JSON.parse(e).error || errMsg; } catch {}
+            document.getElementById('buscomp-error').textContent = errMsg;
+            document.getElementById('buscomp-error').style.display = 'block';
+        } else {
+            const raw = await resp.text();
+            let analysisHtml = '';
+            try { analysisHtml = mdToHtml(JSON.parse(raw.trim()).analysis || ''); } catch {}
+            writeBuscompReport(analysisHtml, tableHtml, chips);
+        }
+    } catch (err) {
+        document.getElementById('buscomp-loading').style.display = 'none';
+        document.getElementById('buscomp-error').textContent = 'Error: ' + (err.message || 'Error de conexión. Intentá de nuevo.');
+        document.getElementById('buscomp-error').style.display = 'block';
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '🕵️ Buscar competidores modelo';
     }
 }

@@ -1320,6 +1320,86 @@ def comp_analyze():
     )
 
 
+@app.route("/buscomp-report")
+@login_required
+def buscomp_report():
+    return render_template("buscomp_report.html")
+
+
+@app.route("/api/buscomp-analyze", methods=["POST"])
+@login_required
+def buscomp_analyze():
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        return jsonify({"error": "ANTHROPIC_API_KEY no configurada."}), 500
+
+    data = request.get_json() or {}
+    sellers = data.get("sellers", [])
+    min_conc = data.get("min_conc", 60)
+    min_units = data.get("min_units", 100)
+    tc = data.get("tc", 1500)
+
+    if not sellers:
+        return jsonify({"error": "Ningún vendedor cumple los criterios — relajalos y probá de nuevo."}), 400
+
+    sellers_str = json.dumps(sellers[:30], ensure_ascii=False, indent=1)
+
+    prompt = (
+        f"Sos un experto en e-commerce en MercadoLibre Argentina y sourcing desde China.\n"
+        f"Te paso vendedores de MeLi (datos reales de Nubimetrics, un mes) que ya pasaron un filtro: "
+        f"concentración top3 ≥ {min_conc}% de su revenue y producto estrella con ≥ {min_units} u/mes. "
+        f"Son candidatos a COMPETIDOR MODELO: negocios que facturan fuerte con POCOS productos héroe "
+        f"(lo contrario a la cola larga tipo TODOMICRO, que no sirve como modelo).\n"
+        f"Por cada vendedor: revenue_mes, unidades_mes, publicaciones, top1_share, top3_share y sus 3 "
+        f"productos estrella con unidades, revenue y precio_real (monto ÷ unidades).\n\n"
+        f"{sellers_str}\n\n"
+        f"CONTEXTO DEL ANALISTA:\n"
+        f"- Ya importa por courier aéreo desde China (proveedores de fábrica directa, FOB reales "
+        f"~1/3 del listado de Alibaba) y vende en MeLi: sensores de CO y protectores de tensión\n"
+        f"- Busca productos LIVIANOS (<1kg) para courier; voluminosos/pesados no le sirven\n"
+        f"- REGLA COURIER 4×: precio de venta ARS ≥ ~4× el FOB USD en miles. "
+        f"Cálculo: neto = precio × 0,85 − $7.000 envío; landed = FOB × 1,975 × TC (${tc:,.0f} ARS/USD)\n"
+        f"- Los nicknames vienen ANONIMIZADOS por Nubimetrics: el vendedor real se identifica "
+        f"buscando el título del producto estrella en MeLi\n\n"
+        f"TAREA: rankeá los mejores 5 a 8 competidores MODELO. Por cada uno:\n"
+        f"### [nickname anonimizado]\n"
+        f"- **Negocio**: revenue, publicaciones, concentración — qué tipo de jugada es "
+        f"(producto héroe + variantes, marca propia, escalera de precios, consumibles)\n"
+        f"- **Producto estrella**: qué es, unidades/mes, precio real, ¿traíble por courier? "
+        f"(peso estimado, FOB estimado de fábrica, verificación 4×, margen estimado)\n"
+        f"- **Riesgos**: certificaciones, marca registrada, exclusividad, precio commodity\n"
+        f"- **Veredicto**: 🟢 Modelo a estudiar / 🟡 Evaluar / 🔴 Descartar (motivo)\n\n"
+        f"Al final:\n"
+        f"1. Tabla resumen: | Vendedor | Revenue | Producto estrella | Unid/mes | Courier | Veredicto |\n"
+        f"2. Sección '📋 Próximos pasos': para los 🟢, recomendá identificar al vendedor real en MeLi "
+        f"(buscando el título) y exportar su catálogo completo de Nubimetrics para analizarlo con el "
+        f"módulo ⚔️ Competidores.\n"
+        f"Usá formatos abreviados ($5.9M, 1.2k) y sé concreto."
+    )
+
+    def generate():
+        try:
+            client = anthropic.Anthropic(api_key=api_key)
+            chunks = []
+            with client.messages.stream(
+                model="claude-sonnet-4-6",
+                max_tokens=4000,
+                messages=[{"role": "user", "content": prompt}],
+            ) as stream:
+                for text in stream.text_stream:
+                    chunks.append(text)
+                    yield " "  # keep-alive: evita timeout del proxy de Railway
+            yield json.dumps({"analysis": "".join(chunks)})
+        except anthropic.APIError as e:
+            yield json.dumps({"error": str(e)})
+
+    return Response(
+        generate(),
+        mimetype="application/json",
+        headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
+    )
+
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(debug=False, host="0.0.0.0", port=port)

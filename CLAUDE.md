@@ -158,6 +158,24 @@ Needs `NODE_EXTRA_CA_CERTS` env var set if machine has AVG antivirus (SSL interc
 
 ## Features added 2026-07-04
 
+### 🕵️ Buscador de Competidores module (vendedores con producto estrella)
+**Button:** "🕵️ Buscar Competidores" (blue gradient `#1565C0` → `#42A5F5`, in the search bar)
+
+**Purpose:** Upload category CSVs from Nubimetrics (same as Sourcing/Nicho) → find SELLERS whose revenue is concentrated in a few hero products with high rotation (the "modelo" competitors worth studying — opposite of long-tail sellers like TODOMICRO).
+
+**Flow:** mirrors Nicho — client-side CSV parsing, criteria (concentración top3 % default 60, rotación mínima del producto estrella default 100 u/mes, facturación mínima default $10M formatted es-AR, TC autofilled from DolarApi). Report at `/buscomp-report` via localStorage key `buscomp_report_data`.
+
+**Aggregation (`aggregateBuscompSellers` in app.js):** groups by `Nickname_Vendedor` → per seller: revenue, units, publicaciones (unique titles), top1_share/top3_share (% of seller revenue in top 1/3 products by revenue), estrellas = top 3 products with unidades_mes, revenue_mes, precio_real (monto ÷ unidades). Filter: revenue ≥ min, top3_share ≥ min, star units ≥ min. Deterministic table shows up to 30 sellers with their star product.
+
+**Key caveat (in table note + AI prompt):** Nubimetrics nicknames are ANONYMIZED — identify the real seller by searching the star product title on MercadoLibre.
+
+**AI analysis (`POST /api/buscomp-analyze`):** user context (courier ops, factory-direct FOB ~1/3 Alibaba listings) + 4× rule. Output per seller: business profile (hero+variants / marca propia / escalera), star product courier-viability with FOB/margin math, risks, 🟢🟡🔴 verdict; final summary table + "📋 Próximos pasos" pointing 🟢 sellers to the ⚔️ Competidores module (export their catalog from Nubimetrics).
+
+**Pipeline:** 🕵️ finds WHO to study from category CSVs → export that seller's catalog XLSX → ⚔️ analyzes their full catalog for attackable gaps.
+
+---
+
+
 ### ⚔️ Competidores module (análisis de catálogo por vendedor)
 **Button:** "⚔️ Competidores" (red gradient `#B71C1C` → `#E53935`, in the search bar)
 

@@ -606,6 +606,22 @@ main {
 .btn-comp:active { transform: scale(.97); }
 .btn-comp:disabled { opacity: .45; cursor: not-allowed; }
 
+.btn-buscomp {
+    background: linear-gradient(135deg, #1565C0 0%, #42A5F5 100%);
+    color: #fff;
+    border: none;
+    border-radius: var(--r);
+    padding: .7rem 1.3rem;
+    font-size: .9rem;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: opacity .15s, transform .1s;
+}
+.btn-buscomp:hover { opacity: .85; }
+.btn-buscomp:active { transform: scale(.97); }
+.btn-buscomp:disabled { opacity: .45; cursor: not-allowed; }
+
 /* ─── Sourcing modal ─────────────────────────────────── */
 .sourcing-dropzone {
     border: 2px dashed var(--border);
