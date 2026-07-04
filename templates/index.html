@@ -30,6 +30,7 @@
             <button id="nubi-btn" class="btn-nubi" title="Analizá una categoría completa desde Nubimetrics">📈 Nubimetrics</button>
             <button id="store-btn" class="btn-store" title="Ver tus publicaciones activas con ventas reales y recomendaciones de crecimiento">🏪 Mi Tienda</button>
             <button id="sourcing-btn" class="btn-sourcing" title="Subí reportes de Nubimetrics y encontrá los mejores productos para importar y vender">🎯 Sourcing</button>
+            <button id="nicho-btn" class="btn-nicho" title="Subí reportes de Nubimetrics y encontrá productos con alta rotación y pocos vendedores">💎 Nicho</button>
         </div>
 
         <button id="filter-toggle" class="filter-toggle">
@@ -369,6 +370,45 @@
             <div id="sourcing-loading" style="display:none;padding:1rem 0;color:#aaa">🔄 Analizando con IA, puede tardar unos segundos...</div>
             <div id="sourcing-error" class="error-msg" style="display:none"></div>
             <div id="sourcing-ai-result" style="display:none;background:#0F3460;border-radius:8px;padding:1.2rem;margin-top:1rem;line-height:1.7;font-size:.9rem"></div>
+        </div>
+    </div>
+</div>
+
+<!-- Nicho Modal -->
+<div id="nicho-modal" class="modal-overlay" style="display:none" role="dialog" aria-modal="true" aria-labelledby="nicho-modal-title">
+    <div class="modal-box modal-box-wide">
+        <div class="modal-header">
+            <h3 id="nicho-modal-title">💎 Nicho — Alta rotación, pocos vendedores</h3>
+            <button id="close-nicho-modal" class="modal-close" aria-label="Cerrar">✕</button>
+        </div>
+        <div class="ai-content" style="padding:1.25rem">
+            <div id="nicho-upload-area">
+                <p style="margin-bottom:.6rem;color:#aaa">Subí uno o más CSVs exportados desde Nubimetrics: <strong style="color:#FFE600">Mercado Avanzado → Items → Exportar CSV</strong>. Cada archivo es una categoría.</p>
+                <p style="margin-bottom:1rem;color:#666;font-size:.82rem">Los archivos se procesan en el browser — no se suben al servidor.</p>
+                <div id="nicho-dropzone" class="sourcing-dropzone">
+                    <span style="font-size:1.8rem">📂</span>
+                    <span>Arrastrá los CSV acá o <label for="nicho-file-input" class="sourcing-file-label">elegí archivos</label></span>
+                    <input type="file" id="nicho-file-input" accept=".csv" multiple style="display:none">
+                </div>
+                <div id="nicho-file-list" style="margin-top:.75rem"></div>
+            </div>
+
+            <div id="nicho-criteria" style="display:none;margin-top:1.25rem">
+                <div class="sourcing-criteria-grid">
+                    <div class="filter-group">
+                        <label for="nicho-min-units">🔄 Rotación mínima (unidades/mes)</label>
+                        <input type="number" id="nicho-min-units" class="keyword-input" value="50" min="1">
+                    </div>
+                    <div class="filter-group">
+                        <label for="nicho-max-sellers">👥 Máximo de vendedores</label>
+                        <input type="number" id="nicho-max-sellers" class="keyword-input" value="3" min="1" max="20">
+                    </div>
+                </div>
+                <button id="nicho-analyze-btn" class="btn-ai" style="margin-top:1.25rem">💎 Buscar nichos</button>
+            </div>
+
+            <div id="nicho-loading" style="display:none;padding:1rem 0;color:#aaa">🔄 Analizando con IA, puede tardar unos segundos...</div>
+            <div id="nicho-error" class="error-msg" style="display:none"></div>
         </div>
     </div>
 </div>

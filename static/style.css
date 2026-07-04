@@ -574,6 +574,22 @@ main {
 .btn-sourcing:active { transform: scale(.97); }
 .btn-sourcing:disabled { opacity: .45; cursor: not-allowed; }
 
+.btn-nicho {
+    background: linear-gradient(135deg, #AD1457 0%, #EC407A 100%);
+    color: #fff;
+    border: none;
+    border-radius: var(--r);
+    padding: .7rem 1.3rem;
+    font-size: .9rem;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: opacity .15s, transform .1s;
+}
+.btn-nicho:hover { opacity: .85; }
+.btn-nicho:active { transform: scale(.97); }
+.btn-nicho:disabled { opacity: .45; cursor: not-allowed; }
+
 /* ─── Sourcing modal ─────────────────────────────────── */
 .sourcing-dropzone {
     border: 2px dashed var(--border);

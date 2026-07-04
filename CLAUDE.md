@@ -156,6 +156,23 @@ Needs `NODE_EXTRA_CA_CERTS` env var set if machine has AVG antivirus (SSL interc
 
 ---
 
+## Features added 2026-07-04
+
+### 💎 Nicho module (alta rotación + pocos vendedores)
+**Button:** "💎 Nicho" (pink gradient `#AD1457` → `#EC407A`, in the search bar)
+
+**Purpose:** Upload the same Nubimetrics CSVs as Sourcing → find products with high rotation (units/month) and few sellers.
+
+**Flow:** mirrors Sourcing — multi-CSV client-side parsing, criteria (rotación mínima u/mes default 50, máx vendedores default 3), report opens in new tab at `/nicho-report` via localStorage key `nicho_report_data`.
+
+**Aggregation (`aggregateNichoProducts` in app.js):** groups by `Titulo_Publicacion`; per product: unidades_mes, **precio_real = Monto_Vendido ÷ Unidades** (never list price), revenue_mes, unique sellers. Category levels with literal `"-"` are treated as empty (Nubimetrics quirk). Deterministic table = products meeting criteria sorted by units/sellers ratio.
+
+**Key caveat (handled in the AI prompt):** the same product appears under different titles per seller, so seller counts per exact title UNDERESTIMATE competition. `/api/nicho-analyze` instructs Claude to cluster similar titles before ranking, and to output a "⚠️ Falsos nichos" section for single-seller titles that are actually fragmented competitive markets.
+
+**Backend:** `GET /nicho-report` (template `nicho_report.html`, copy of sourcing report), `POST /api/nicho-analyze` (streaming with keep-alive spaces, same pattern as sourcing).
+
+---
+
 ## Features added 2026-06-29
 
 ### 📊 Real Trends integration (XLSX upload)

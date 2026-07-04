@@ -1064,6 +1064,82 @@ def sourcing_analyze():
     )
 
 
+@app.route("/nicho-report")
+@login_required
+def nicho_report():
+    return render_template("nicho_report.html")
+
+
+@app.route("/api/nicho-analyze", methods=["POST"])
+@login_required
+def nicho_analyze():
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        return jsonify({"error": "ANTHROPIC_API_KEY no configurada."}), 500
+
+    data = request.get_json() or {}
+    products = data.get("products", [])
+    min_units = data.get("min_units", 50)
+    max_sellers = data.get("max_sellers", 3)
+
+    if not products:
+        return jsonify({"error": "Sin datos de productos para analizar."}), 400
+
+    products_str = json.dumps(products[:120], ensure_ascii=False, indent=1)
+
+    prompt = (
+        f"Sos un experto en e-commerce y análisis de nichos en MercadoLibre Argentina.\n"
+        f"Te paso ventas reales de Nubimetrics agrupadas por título de publicación, "
+        f"ordenadas por unidades vendidas en el mes.\n"
+        f"Cada entrada tiene: título, categoría, unidades_mes, precio_real (monto vendido ÷ unidades, "
+        f"NO el precio de lista), revenue_mes y vendedores (únicos por título exacto).\n\n"
+        f"{products_str}\n\n"
+        f"OBJETIVO: detectar NICHOS = productos con ALTA ROTACIÓN (≥ {min_units} unidades/mes) "
+        f"y POCA COMPETENCIA (≤ {max_sellers} vendedores REALES).\n\n"
+        f"IMPORTANTE — competencia real: en MeLi el mismo producto aparece con títulos distintos "
+        f"según el vendedor. Antes de evaluar competencia, AGRUPÁ los títulos que sean claramente "
+        f"el mismo producto (mismo tipo, marca/modelo o especificación equivalente) y sumá sus "
+        f"unidades y vendedores. Un título con 1 vendedor NO es nicho si hay 10 títulos casi "
+        f"iguales de otros vendedores.\n\n"
+        f"TAREA: rankeá los mejores 5 a 8 nichos que cumplan los criterios DESPUÉS de agrupar. "
+        f"Para cada uno usá este formato:\n"
+        f"### [Nombre del nicho/producto]\n"
+        f"- **Rotación total**: X unidades/mes sumando las publicaciones agrupadas\n"
+        f"- **Competencia real**: X vendedores (títulos agrupados: cuáles)\n"
+        f"- **Precio real de venta**: rango en ARS\n"
+        f"- **Revenue del nicho**: $X ARS/mes\n"
+        f"- **Por qué es nicho**: qué barrera o particularidad mantiene afuera a la competencia\n"
+        f"- **Veredicto**: 🟢 Nicho claro / 🟡 Evaluar / 🔴 Descartar (con un motivo)\n\n"
+        f"Al final:\n"
+        f"1. Una tabla resumen: | Nicho | Unid/mes | Vendedores | Precio real | Veredicto |\n"
+        f"2. Una sección '⚠️ Falsos nichos' con títulos que parecen nicho por vendedor único "
+        f"pero que al agrupar tienen mucha competencia.\n"
+        f"Usá formatos abreviados ($5.9M, 1.2k) y sé concreto."
+    )
+
+    def generate():
+        try:
+            client = anthropic.Anthropic(api_key=api_key)
+            chunks = []
+            with client.messages.stream(
+                model="claude-sonnet-4-6",
+                max_tokens=4000,
+                messages=[{"role": "user", "content": prompt}],
+            ) as stream:
+                for text in stream.text_stream:
+                    chunks.append(text)
+                    yield " "  # keep-alive: evita timeout del proxy de Railway
+            yield json.dumps({"analysis": "".join(chunks)})
+        except anthropic.APIError as e:
+            yield json.dumps({"error": str(e)})
+
+    return Response(
+        generate(),
+        mimetype="application/json",
+        headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
+    )
+
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(debug=False, host="0.0.0.0", port=port)

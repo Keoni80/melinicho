@@ -142,6 +142,32 @@ document.addEventListener('DOMContentLoaded', () => {
         handleSourcingFiles(e.dataTransfer.files);
     });
     dz.addEventListener('click', () => document.getElementById('sourcing-file-input').click());
+
+    // Nicho
+    document.getElementById('nicho-btn').addEventListener('click', () => {
+        document.getElementById('nicho-modal').style.display = 'flex';
+    });
+    document.getElementById('close-nicho-modal').addEventListener('click', () => {
+        document.getElementById('nicho-modal').style.display = 'none';
+    });
+    document.getElementById('nicho-modal').addEventListener('click', e => {
+        if (e.target === e.currentTarget) document.getElementById('nicho-modal').style.display = 'none';
+    });
+    document.getElementById('nicho-file-input').addEventListener('change', e => {
+        handleNichoFiles(e.target.files);
+    });
+    document.getElementById('nicho-analyze-btn').addEventListener('click', analyzeNichoWithAI);
+
+    // Nicho drag & drop
+    const ndz = document.getElementById('nicho-dropzone');
+    ndz.addEventListener('dragover', e => { e.preventDefault(); ndz.classList.add('drag-over'); });
+    ndz.addEventListener('dragleave', () => ndz.classList.remove('drag-over'));
+    ndz.addEventListener('drop', e => {
+        e.preventDefault();
+        ndz.classList.remove('drag-over');
+        handleNichoFiles(e.dataTransfer.files);
+    });
+    ndz.addEventListener('click', () => document.getElementById('nicho-file-input').click());
 });
 
 // ─── Sales Dashboard ──────────────────────────────────────
@@ -1407,5 +1433,230 @@ async function analyzeSourcingWithAI() {
     } finally {
         btn.disabled = false;
         btn.textContent = '🤖 Analizar y recomendar productos';
+    }
+}
+
+// ─── Nicho Module ─────────────────────────────────────────
+// Alta rotación + pocos vendedores, sobre los mismos CSVs de Nubimetrics
+
+let nichoFiles = [];
+let nichoFileSeq = 0;
+
+function handleNichoFiles(files) {
+    if (!files || !files.length) return;
+    Array.from(files).forEach(file => {
+        const reader = new FileReader();
+        reader.onload = e => {
+            const rows = parseCSV(e.target.result);
+            if (rows.length > 1) {
+                const id = ++nichoFileSeq;
+                nichoFiles.push({ id, name: file.name, rows: rows.slice(1) });
+                addNichoFileItem(id, file.name, rows.length - 1);
+                document.getElementById('nicho-criteria').style.display = 'block';
+            }
+        };
+        reader.readAsText(file, 'utf-8');
+    });
+}
+
+function addNichoFileItem(id, name, rowCount) {
+    const list = document.getElementById('nicho-file-list');
+    const item = document.createElement('div');
+    item.className = 'sourcing-file-item';
+    item.dataset.fileId = id;
+    item.innerHTML = `
+        <span class="sourcing-file-ok">✓</span>
+        <span class="sourcing-file-name">${name}</span>
+        <span class="sourcing-file-count">${rowCount.toLocaleString('es-AR')} registros</span>
+        <button class="sourcing-file-remove" title="Quitar archivo">✕</button>
+    `;
+    item.querySelector('.sourcing-file-remove').addEventListener('click', () => removeNichoFile(id, item));
+    list.appendChild(item);
+}
+
+function removeNichoFile(id, itemEl) {
+    nichoFiles = nichoFiles.filter(f => f.id !== id);
+    itemEl.remove();
+    if (!nichoFiles.length) {
+        document.getElementById('nicho-criteria').style.display = 'none';
+        document.getElementById('nicho-error').style.display = 'none';
+    }
+}
+
+function aggregateNichoProducts(rows) {
+    // Mismos índices de columna que el módulo Sourcing (header conocido de Nubimetrics)
+    const h = [
+        'Categoria_Nivel_1','Categoria_Nivel_2','Categoria_Nivel_3','Categoria_Nivel_4',
+        'Categoria_Nivel_5','Categoria_Nivel_6','Categoria_Nivel_7',
+        'Codigo_Categoria_Nivel1','Codigo_Categoria_Nivel2','Codigo_Categoria_Nivel3',
+        'Codigo_Categoria_Nivel4','Codigo_Categoria_Nivel5','Codigo_Categoria_Nivel6',
+        'Codigo_Categoria_Nivel7','Categoria_Completa','Codigo_de_Publicacion','Sitio',
+        'Titulo_Publicacion','Codigo_Vendedor','Nickname_Vendedor','Tipo_Vendedor',
+        'Categoria_del_Vendedor','Vendedor_No_Profesional','Vendedor_Profesional',
+        'Precio_Original','Moneda','Foto_Publicacion','Link_a_Publicacion',
+        'Esta_en_Oferta','Nuevo','Usado','Estado','Ofrece_MercadoPago',
+        'Provincia','Ciudad','Codigo_Tienda_Oficial','Nombre_Tienda_Oficial',
+        'Ofrece_Envio_Gratis','Ofrece_MercadoEnvios','Marca','catalog_product_id',
+        'catalog_family_name','catalog_name','Compra_Internacional','sku','gtin',
+        'oem','número de pieza','modelo','AI_CODE_ID','AI_Product_Name',
+        'OfreceFlex','OfreceFull','Supermercado','site','category_Id','categoryLevel',
+        'categoryName','categoryPath','categoryLevel1','level1_name','categoryLevel2',
+        'level2_name','categoryLevel3','level3_name','categoryLevel4','level4_name',
+        'categoryLevel5','level5_name','categoryLevel6','level6_name','categoryLevel7',
+        'level7_name','Mes','Tipo_de_Exposicion','Unidades_Vendidas',
+        'Monto_Vendido_Moneda_Local','Monto_Vendido_USD','PrecioMonedaLocal','PrecioUsd',
+        'Cancelaciones_Unidades','Cancelaciones_Moneda_Local','Cancelaciones_USD',
+        'Tasa_de_conversion'
+    ];
+    const ci = k => h.findIndex(c => c.toLowerCase().includes(k.toLowerCase()));
+    const iTitle  = ci('Titulo_Publicacion');
+    const iUnits  = ci('unidades_vendidas');
+    const iRev    = ci('monto_vendido_moneda_local');
+    const iSeller = ci('nickname_vendedor');
+    const iCat4   = ci('categoria_nivel_4');
+    const iCat3   = ci('categoria_nivel_3');
+    const iCat2   = ci('categoria_nivel_2');
+
+    const clean = v => (v || '').trim();
+    const fnum  = v => { try { return parseFloat(v) || 0; } catch { return 0; } };
+    const fint  = v => { try { return parseInt(v) || 0; } catch { return 0; } };
+
+    const products = {};
+    for (const r of rows) {
+        const title = clean(r[iTitle]).slice(0, 80);
+        if (!title) continue;
+        const units  = fint(r[iUnits]);
+        const rev    = fnum(r[iRev]);
+        const seller = clean(r[iSeller]);
+        // Nubimetrics usa "-" literal en los niveles de categoría vacíos
+        const cv     = i => { const s = clean(r[i]); return s === '-' ? '' : s; };
+        const cat    = cv(iCat4) || cv(iCat3) || cv(iCat2);
+
+        if (!products[title]) {
+            products[title] = { units: 0, revenue: 0, sellers: new Set(), cat };
+        }
+        const p = products[title];
+        p.units   += units;
+        p.revenue += rev;
+        if (seller) p.sellers.add(seller);
+    }
+
+    return Object.entries(products)
+        .map(([title, p]) => ({
+            título:         title,
+            categoría:      p.cat,
+            unidades_mes:   p.units,
+            // Precio REAL de venta (monto / unidades) — el precio de lista puede ser 2× el real
+            precio_real:    p.units > 0 ? Math.round(p.revenue / p.units) : 0,
+            revenue_mes:    Math.round(p.revenue),
+            vendedores:     p.sellers.size,
+        }))
+        .filter(p => p.unidades_mes > 0)
+        .sort((a, b) => b.unidades_mes - a.unidades_mes);
+}
+
+function buildNichoChips(minUnits, maxSellers, nFiles) {
+    const now = new Date().toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' });
+    return `
+        <span class="chip">🔄 Rotación <strong>≥ ${minUnits} u/mes</strong></span>
+        <span class="chip">👥 Vendedores <strong>≤ ${maxSellers}</strong></span>
+        <span class="chip">📂 <strong>${nFiles}</strong> archivo${nFiles > 1 ? 's' : ''}</span>
+        <span class="chip">🕐 ${now}</span>`;
+}
+
+function buildNichoTableHtml(candidates, minUnits, maxSellers) {
+    const fmtARS = n => '$' + Math.round(n).toLocaleString('es-AR');
+    if (!candidates.length) {
+        return `<div class="sim-box"><div class="sim-title">💎 Publicaciones que cumplen los criterios</div>
+            <p style="padding:1rem 1.25rem">Ninguna publicación cumple ≥ ${minUnits} u/mes con ≤ ${maxSellers} vendedores. Probá relajar los criterios.</p></div>`;
+    }
+    const rows = candidates.slice(0, 50).map((p, i) => `
+        <tr>
+            <td>${i + 1}</td>
+            <td class="sim-prod">${p['título']}</td>
+            <td>${p['categoría']}</td>
+            <td>${fmtARS(p.precio_real)}</td>
+            <td class="sim-units">${p.unidades_mes.toLocaleString('es-AR')}</td>
+            <td>${p.vendedores}</td>
+            <td>${fmtARS(p.revenue_mes)}</td>
+        </tr>`).join('');
+    return `
+    <div class="sim-box">
+        <div class="sim-title">💎 Top publicaciones — ≥ ${minUnits} u/mes y ≤ ${maxSellers} vendedores (${candidates.length} encontradas)</div>
+        <table class="sim-table">
+            <thead><tr>
+                <th>#</th><th>Publicación</th><th>Categoría</th><th>Precio real</th><th>Unid/mes</th><th>Vend.</th><th>Revenue/mes</th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+        </table>
+        <p style="padding:.6rem 1.25rem;color:#7A8499;font-size:.78rem">⚠️ Vendedores contados por título exacto: el mismo producto publicado con otros títulos no se suma acá. El análisis IA agrupa títulos similares para estimar la competencia real. Precio real = monto vendido ÷ unidades.</p>
+    </div>`;
+}
+
+function writeNichoReport(analysisHtml, tableHtml, chips) {
+    localStorage.setItem('nicho_report_data', JSON.stringify({ html: analysisHtml + tableHtml, chips }));
+}
+
+async function analyzeNichoWithAI() {
+    const allRows = nichoFiles.flatMap(f => f.rows);
+    if (!allRows.length) {
+        document.getElementById('nicho-error').textContent = 'Subí al menos un CSV primero.';
+        document.getElementById('nicho-error').style.display = 'block';
+        return;
+    }
+
+    const minUnits   = parseInt(document.getElementById('nicho-min-units').value) || 50;
+    const maxSellers = parseInt(document.getElementById('nicho-max-sellers').value) || 3;
+
+    document.getElementById('nicho-error').style.display = 'none';
+    const btn = document.getElementById('nicho-analyze-btn');
+    btn.disabled = true;
+    btn.textContent = '⏳ Procesando datos...';
+    document.getElementById('nicho-loading').style.display = 'block';
+
+    // Pestaña sincrónica antes del await (popup blocker)
+    window.open('/nicho-report', '_blank');
+
+    const all = aggregateNichoProducts(allRows);
+    const candidates = all
+        .filter(p => p.unidades_mes >= minUnits && p.vendedores <= maxSellers)
+        .sort((a, b) => (b.unidades_mes / b.vendedores) - (a.unidades_mes / a.vendedores));
+
+    const chips = buildNichoChips(minUnits, maxSellers, nichoFiles.length);
+    const tableHtml = buildNichoTableHtml(candidates, minUnits, maxSellers);
+    writeNichoReport('', tableHtml, chips);
+
+    btn.textContent = '⏳ Consultando IA...';
+
+    try {
+        const resp = await fetch('/api/nicho-analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                products: all.slice(0, 120),
+                min_units: minUnits,
+                max_sellers: maxSellers,
+            }),
+        });
+        document.getElementById('nicho-loading').style.display = 'none';
+
+        if (!resp.ok) {
+            let errMsg = `Error del servidor (${resp.status})`;
+            try { const e = await resp.text(); errMsg = JSON.parse(e).error || errMsg; } catch {}
+            document.getElementById('nicho-error').textContent = errMsg;
+            document.getElementById('nicho-error').style.display = 'block';
+        } else {
+            const raw = await resp.text();
+            let analysisHtml = '';
+            try { analysisHtml = mdToHtml(JSON.parse(raw.trim()).analysis || ''); } catch {}
+            writeNichoReport(analysisHtml, tableHtml, chips);
+        }
+    } catch (err) {
+        document.getElementById('nicho-loading').style.display = 'none';
+        document.getElementById('nicho-error').textContent = 'Error: ' + (err.message || 'Error de conexión. Intentá de nuevo.');
+        document.getElementById('nicho-error').style.display = 'block';
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '💎 Buscar nichos';
     }
 }
