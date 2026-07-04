@@ -168,6 +168,37 @@ document.addEventListener('DOMContentLoaded', () => {
         handleNichoFiles(e.dataTransfer.files);
     });
     ndz.addEventListener('click', () => document.getElementById('nicho-file-input').click());
+
+    // Competidores
+    document.getElementById('comp-btn').addEventListener('click', () => {
+        document.getElementById('comp-modal').style.display = 'flex';
+        fetchDolarInto('comp-tc', 'comp-tc-hint');
+    });
+    document.getElementById('close-comp-modal').addEventListener('click', () => {
+        document.getElementById('comp-modal').style.display = 'none';
+    });
+    document.getElementById('comp-modal').addEventListener('click', e => {
+        if (e.target === e.currentTarget) document.getElementById('comp-modal').style.display = 'none';
+    });
+    document.getElementById('comp-file-input').addEventListener('change', e => {
+        handleCompFiles(e.target.files);
+    });
+    document.getElementById('comp-tc').addEventListener('input', () => {
+        dolarManual['comp-tc'] = true;
+        document.getElementById('comp-tc-hint').textContent = 'Valor manual';
+    });
+    document.getElementById('comp-analyze-btn').addEventListener('click', analyzeCompWithAI);
+
+    // Competidores drag & drop
+    const cdz = document.getElementById('comp-dropzone');
+    cdz.addEventListener('dragover', e => { e.preventDefault(); cdz.classList.add('drag-over'); });
+    cdz.addEventListener('dragleave', () => cdz.classList.remove('drag-over'));
+    cdz.addEventListener('drop', e => {
+        e.preventDefault();
+        cdz.classList.remove('drag-over');
+        handleCompFiles(e.dataTransfer.files);
+    });
+    cdz.addEventListener('click', () => document.getElementById('comp-file-input').click());
 });
 
 // ─── Sales Dashboard ──────────────────────────────────────
@@ -1658,5 +1689,172 @@ async function analyzeNichoWithAI() {
     } finally {
         btn.disabled = false;
         btn.textContent = '💎 Buscar nichos';
+    }
+}
+
+// ─── Competidores Module ──────────────────────────────────
+// Catálogos de vendedores exportados de Nubimetrics (XLSX, uno por vendedor)
+
+let compSellers = [];   // [{id, seller, stats, top_products}]
+let compFileSeq = 0;
+const dolarManual = {}; // inputId → true si el usuario lo editó a mano
+
+async function fetchDolarInto(inputId, hintId) {
+    const hint = document.getElementById(hintId);
+    if (dolarManual[inputId]) return;
+    hint.textContent = 'Consultando dólar oficial…';
+    try {
+        const resp = await fetch('https://dolarapi.com/v1/dolares/oficial');
+        if (!resp.ok) throw new Error(resp.status);
+        const d = await resp.json();
+        if (dolarManual[inputId]) return;
+        document.getElementById(inputId).value = d.venta;
+        const fecha = new Date(d.fechaActualizacion).toLocaleDateString('es-AR', { day: 'numeric', month: 'numeric' });
+        hint.textContent = `Oficial venta $${d.venta.toLocaleString('es-AR')} · actualizado ${fecha} (dolarapi.com)`;
+    } catch (e) {
+        hint.textContent = 'No se pudo obtener el dólar oficial — ingresalo a mano';
+    }
+}
+
+function handleCompFiles(files) {
+    if (!files || !files.length) return;
+    document.getElementById('comp-error').style.display = 'none';
+    Array.from(files).forEach(async file => {
+        const id = ++compFileSeq;
+        const item = addCompFileItem(id, file.name, '⏳ procesando…');
+        const fd = new FormData();
+        fd.append('file', file);
+        try {
+            const resp = await fetch('/api/comp-upload', { method: 'POST', body: fd });
+            const data = await resp.json();
+            if (!resp.ok) throw new Error(data.error || `Error ${resp.status}`);
+            compSellers.push({ id, seller: data.seller, stats: data.stats, top_products: data.top_products });
+            const s = data.stats;
+            item.querySelector('.sourcing-file-count').textContent =
+                `$${(s.revenue_mes / 1e6).toFixed(0)}M · ${s.publicaciones} pubs · top10 ${s.top10_share}%`;
+            document.getElementById('comp-criteria').style.display = 'block';
+        } catch (err) {
+            item.querySelector('.sourcing-file-ok').textContent = '✗';
+            item.querySelector('.sourcing-file-count').textContent = err.message;
+        }
+    });
+}
+
+function addCompFileItem(id, name, countText) {
+    const list = document.getElementById('comp-file-list');
+    const item = document.createElement('div');
+    item.className = 'sourcing-file-item';
+    item.dataset.fileId = id;
+    item.innerHTML = `
+        <span class="sourcing-file-ok">✓</span>
+        <span class="sourcing-file-name">${name}</span>
+        <span class="sourcing-file-count">${countText}</span>
+        <button class="sourcing-file-remove" title="Quitar archivo">✕</button>
+    `;
+    item.querySelector('.sourcing-file-remove').addEventListener('click', () => {
+        compSellers = compSellers.filter(s => s.id !== id);
+        item.remove();
+        if (!compSellers.length) {
+            document.getElementById('comp-criteria').style.display = 'none';
+            document.getElementById('comp-error').style.display = 'none';
+        }
+    });
+    list.appendChild(item);
+    return item;
+}
+
+function buildCompChips(tc, nSellers) {
+    const now = new Date().toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' });
+    return `
+        <span class="chip">⚔️ <strong>${nSellers}</strong> competidor${nSellers > 1 ? 'es' : ''}</span>
+        <span class="chip">💵 TC <strong>${tc.toLocaleString('es-AR')}</strong></span>
+        <span class="chip">🕐 ${now}</span>`;
+}
+
+function buildCompTablesHtml(sellers) {
+    const fmtARS = n => '$' + Math.round(n).toLocaleString('es-AR');
+    const fmtM = n => n >= 1e9 ? '$' + (n / 1e9).toFixed(1) + 'B' : '$' + (n / 1e6).toFixed(1) + 'M';
+    return sellers.map(({ seller, stats: s, top_products }) => {
+        const marcas = (s.marcas || []).map(m => `${m.marca} (${m.share}%)`).join(' · ');
+        const concLabel = s.top10_share >= 60
+            ? `<strong style="color:#4CAF50">${s.top10_share}% concentrado</strong>`
+            : `<strong style="color:#F44336">${s.top10_share}% cola larga</strong>`;
+        const rows = top_products.slice(0, 15).map((p, i) => `
+            <tr>
+                <td>${i + 1}</td>
+                <td class="sim-prod">${p.titulo}</td>
+                <td>${p.marca || '—'}</td>
+                <td>${fmtARS(p.precio)}</td>
+                <td class="sim-units">${p.unidades.toLocaleString('es-AR')}</td>
+                <td>${fmtM(p.revenue)}</td>
+                <td>${p.full ? '✓' : '—'}</td>
+            </tr>`).join('');
+        return `
+        <div class="sim-box" style="margin-top:2rem">
+            <div class="sim-title">⚔️ ${seller} — ${fmtM(s.revenue_mes)}/mes · ${s.unidades_mes.toLocaleString('es-AR')} u · ${s.publicaciones} pubs · ticket ${fmtARS(s.ticket)} · top10 ${concLabel} · Full ${s.pct_full}%</div>
+            <p style="padding:.6rem 1.25rem 0;color:#7A8499;font-size:.82rem">Marcas: ${marcas}</p>
+            <table class="sim-table">
+                <thead><tr>
+                    <th>#</th><th>Producto</th><th>Marca</th><th>Precio real</th><th>Unid/mes</th><th>Revenue</th><th>Full</th>
+                </tr></thead>
+                <tbody>${rows}</tbody>
+            </table>
+            <p style="padding:.6rem 1.25rem;color:#7A8499;font-size:.78rem">Precio real = ventas ÷ unidades. Las unidades de Nubimetrics vienen redondeadas en bandas.</p>
+        </div>`;
+    }).join('');
+}
+
+function writeCompReport(analysisHtml, tablesHtml, chips) {
+    localStorage.setItem('comp_report_data', JSON.stringify({ html: analysisHtml + tablesHtml, chips }));
+}
+
+async function analyzeCompWithAI() {
+    if (!compSellers.length) {
+        document.getElementById('comp-error').textContent = 'Subí al menos un XLSX primero.';
+        document.getElementById('comp-error').style.display = 'block';
+        return;
+    }
+    const tc = parseInt(document.getElementById('comp-tc').value) || 1500;
+
+    document.getElementById('comp-error').style.display = 'none';
+    const btn = document.getElementById('comp-analyze-btn');
+    btn.disabled = true;
+    btn.textContent = '⏳ Consultando IA...';
+    document.getElementById('comp-loading').style.display = 'block';
+
+    // Pestaña sincrónica antes del await (popup blocker)
+    window.open('/comp-report', '_blank');
+
+    const sellers = compSellers.map(({ seller, stats, top_products }) => ({ seller, stats, top_products }));
+    const chips = buildCompChips(tc, sellers.length);
+    const tablesHtml = buildCompTablesHtml(sellers);
+    writeCompReport('', tablesHtml, chips);
+
+    try {
+        const resp = await fetch('/api/comp-analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sellers, tc }),
+        });
+        document.getElementById('comp-loading').style.display = 'none';
+
+        if (!resp.ok) {
+            let errMsg = `Error del servidor (${resp.status})`;
+            try { const e = await resp.text(); errMsg = JSON.parse(e).error || errMsg; } catch {}
+            document.getElementById('comp-error').textContent = errMsg;
+            document.getElementById('comp-error').style.display = 'block';
+        } else {
+            const raw = await resp.text();
+            let analysisHtml = '';
+            try { analysisHtml = mdToHtml(JSON.parse(raw.trim()).analysis || ''); } catch {}
+            writeCompReport(analysisHtml, tablesHtml, chips);
+        }
+    } catch (err) {
+        document.getElementById('comp-loading').style.display = 'none';
+        document.getElementById('comp-error').textContent = 'Error: ' + (err.message || 'Error de conexión. Intentá de nuevo.');
+        document.getElementById('comp-error').style.display = 'block';
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '⚔️ Analizar competidores';
     }
 }

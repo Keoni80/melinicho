@@ -158,6 +158,22 @@ Needs `NODE_EXTRA_CA_CERTS` env var set if machine has AVG antivirus (SSL interc
 
 ## Features added 2026-07-04
 
+### ⚔️ Competidores module (análisis de catálogo por vendedor)
+**Button:** "⚔️ Competidores" (red gradient `#B71C1C` → `#E53935`, in the search bar)
+
+**Purpose:** Upload per-seller catalog XLSX exports from Nubimetrics (buscar vendedor → Items → Exportar; filename = nickname) → competitor profile + attackable gaps for courier import.
+
+**Flow:** multi-XLSX upload (parsed server-side with openpyxl via `POST /api/comp-upload`, files ~1MB); each file shows inline stats on load ($XXXm · pubs · top10%). TC input autofilled from DolarApi via generic `fetchDolarInto(inputId, hintId)` (shared helper, `dolarManual` map guards manual edits). Report opens at `/comp-report` via localStorage key `comp_report_data`.
+
+**Server-side stats per seller (`/api/comp-upload`):** revenue_mes, unidades, publicaciones, ticket, top10_share (% revenue in top 10 pubs — ≥60% = concentrated seller worth studying), pct_full, pct_catalogo, top brands with share, top 20 products with **precio real = Ventas $ ÷ Ventas en Unid.** (units come rounded in bands).
+
+**AI analysis (`POST /api/comp-analyze`):** prompt includes the user's context (imports via courier: CO sensors, protectores de tensión; factory-direct FOB ~1/3 of Alibaba listings) and the **courier 4× rule** (neto = precio×0,85 − $7.000; landed = FOB × 1,975 × TC). Output: per-competitor profile (concentrado vs cola larga, marca propia vs revendedor), attackable gaps with FOB/margin math and 🟢🟡🔴 verdicts, premium-ladder plays, final prioritized recommendation.
+
+**XLSX columns (Nubimetrics per-seller export):** Título, Marca, Ventas en $, Ventas en Unid., Precio Promedio, Tipo de Publicación, Fulfillment, Catálogo, Con Envío Gratis, SKU.
+
+---
+
+
 ### 💎 Nicho module (alta rotación + pocos vendedores)
 **Button:** "💎 Nicho" (pink gradient `#AD1457` → `#EC407A`, in the search bar)
 

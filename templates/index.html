@@ -31,6 +31,7 @@
             <button id="store-btn" class="btn-store" title="Ver tus publicaciones activas con ventas reales y recomendaciones de crecimiento">🏪 Mi Tienda</button>
             <button id="sourcing-btn" class="btn-sourcing" title="Subí reportes de Nubimetrics y encontrá los mejores productos para importar y vender">🎯 Sourcing</button>
             <button id="nicho-btn" class="btn-nicho" title="Subí reportes de Nubimetrics y encontrá productos con alta rotación y pocos vendedores">💎 Nicho</button>
+            <button id="comp-btn" class="btn-comp" title="Subí catálogos de vendedores exportados de Nubimetrics y analizá a tus competidores">⚔️ Competidores</button>
         </div>
 
         <button id="filter-toggle" class="filter-toggle">
@@ -409,6 +410,41 @@
 
             <div id="nicho-loading" style="display:none;padding:1rem 0;color:#aaa">🔄 Analizando con IA, puede tardar unos segundos...</div>
             <div id="nicho-error" class="error-msg" style="display:none"></div>
+        </div>
+    </div>
+</div>
+
+<!-- Competidores Modal -->
+<div id="comp-modal" class="modal-overlay" style="display:none" role="dialog" aria-modal="true" aria-labelledby="comp-modal-title">
+    <div class="modal-box modal-box-wide">
+        <div class="modal-header">
+            <h3 id="comp-modal-title">⚔️ Competidores — Analizá el catálogo de otros vendedores</h3>
+            <button id="close-comp-modal" class="modal-close" aria-label="Cerrar">✕</button>
+        </div>
+        <div class="ai-content" style="padding:1.25rem">
+            <div id="comp-upload-area">
+                <p style="margin-bottom:.6rem;color:#aaa">Subí uno o más XLSX exportados desde Nubimetrics: <strong style="color:#FFE600">buscar el vendedor → Items → Exportar</strong>. Cada archivo es un vendedor (el nombre del archivo se usa como nickname).</p>
+                <div id="comp-dropzone" class="sourcing-dropzone">
+                    <span style="font-size:1.8rem">📂</span>
+                    <span>Arrastrá los XLSX acá o <label for="comp-file-input" class="sourcing-file-label">elegí archivos</label></span>
+                    <input type="file" id="comp-file-input" accept=".xlsx" multiple style="display:none">
+                </div>
+                <div id="comp-file-list" style="margin-top:.75rem"></div>
+            </div>
+
+            <div id="comp-criteria" style="display:none;margin-top:1.25rem">
+                <div class="sourcing-criteria-grid">
+                    <div class="filter-group">
+                        <label for="comp-tc">💵 Tipo de cambio (ARS/USD)</label>
+                        <input type="number" id="comp-tc" class="keyword-input" value="1500" min="1">
+                        <small id="comp-tc-hint" class="sourcing-tc-hint"></small>
+                    </div>
+                </div>
+                <button id="comp-analyze-btn" class="btn-ai" style="margin-top:1.25rem">⚔️ Analizar competidores</button>
+            </div>
+
+            <div id="comp-loading" style="display:none;padding:1rem 0;color:#aaa">🔄 Analizando con IA, puede tardar unos segundos...</div>
+            <div id="comp-error" class="error-msg" style="display:none"></div>
         </div>
     </div>
 </div>

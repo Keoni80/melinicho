@@ -590,6 +590,22 @@ main {
 .btn-nicho:active { transform: scale(.97); }
 .btn-nicho:disabled { opacity: .45; cursor: not-allowed; }
 
+.btn-comp {
+    background: linear-gradient(135deg, #B71C1C 0%, #E53935 100%);
+    color: #fff;
+    border: none;
+    border-radius: var(--r);
+    padding: .7rem 1.3rem;
+    font-size: .9rem;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: opacity .15s, transform .1s;
+}
+.btn-comp:hover { opacity: .85; }
+.btn-comp:active { transform: scale(.97); }
+.btn-comp:disabled { opacity: .45; cursor: not-allowed; }
+
 /* ─── Sourcing modal ─────────────────────────────────── */
 .sourcing-dropzone {
     border: 2px dashed var(--border);

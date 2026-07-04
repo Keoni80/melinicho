@@ -1140,6 +1140,186 @@ def nicho_analyze():
     )
 
 
+@app.route("/comp-report")
+@login_required
+def comp_report():
+    return render_template("comp_report.html")
+
+
+@app.route("/api/comp-upload", methods=["POST"])
+@login_required
+def comp_upload():
+    """Parsea el catálogo de UN vendedor exportado desde Nubimetrics (XLSX)."""
+    try:
+        import openpyxl
+    except ImportError:
+        return jsonify({"error": "openpyxl no instalado en el servidor."}), 500
+
+    f = request.files.get("file")
+    if not f:
+        return jsonify({"error": "No se recibió ningún archivo."}), 400
+
+    seller = os.path.splitext(f.filename or "vendedor")[0]
+
+    try:
+        wb = openpyxl.load_workbook(f, data_only=True, read_only=True)
+        ws = wb.active
+    except Exception as e:
+        return jsonify({"error": f"No se pudo leer el archivo: {e}"}), 400
+
+    rows = list(ws.iter_rows(values_only=True))
+    if not rows:
+        return jsonify({"error": "El archivo está vacío."}), 400
+
+    header = [str(c).lower().strip() if c is not None else "" for c in rows[0]]
+
+    def col_idx(keywords):
+        for i, h in enumerate(header):
+            if any(k in h for k in keywords):
+                return i
+        return None
+
+    idx_title = col_idx(["título", "titulo"])
+    idx_brand = col_idx(["marca"])
+    idx_rev   = col_idx(["ventas en $", "ventas en$"])
+    idx_units = col_idx(["ventas en unid", "unid"])
+    idx_price = col_idx(["precio promedio", "precio"])
+    idx_full  = col_idx(["fulfillment"])
+    idx_cat   = col_idx(["catálogo", "catalogo"])
+
+    if idx_title is None or idx_units is None:
+        return jsonify({"error": "No parece un export de catálogo de vendedor de Nubimetrics (faltan columnas Título / Ventas en Unid.)."}), 400
+
+    def fnum(v):
+        if v is None:
+            return 0.0
+        if isinstance(v, (int, float)):
+            return float(v)
+        s = re.sub(r"[^\d.,]", "", str(v)).replace(".", "").replace(",", ".")
+        try:
+            return float(s) if s else 0.0
+        except ValueError:
+            return 0.0
+
+    products = []
+    for row in rows[1:]:
+        if not row or all(c is None for c in row):
+            continue
+        def val(i):
+            return row[i] if i is not None and i < len(row) else None
+        title = str(val(idx_title) or "").strip()
+        if not title:
+            continue
+        units = fnum(val(idx_units))
+        rev   = fnum(val(idx_rev))
+        # Precio real = ventas $ / unidades; fallback al precio promedio del export
+        price = round(rev / units) if units > 0 else round(fnum(val(idx_price)))
+        products.append({
+            "titulo":   title[:90],
+            "marca":    str(val(idx_brand) or "").strip(),
+            "precio":   price,
+            "unidades": int(units),
+            "revenue":  round(rev),
+            "full":     str(val(idx_full) or "").strip().lower() == "si",
+            "catalogo": str(val(idx_cat) or "").strip().lower() == "si",
+        })
+
+    if not products:
+        return jsonify({"error": "No se encontraron productos en el archivo."}), 400
+
+    products.sort(key=lambda p: p["revenue"], reverse=True)
+    total_rev   = sum(p["revenue"] for p in products)
+    total_units = sum(p["unidades"] for p in products)
+    top10_rev   = sum(p["revenue"] for p in products[:10])
+
+    brands = {}
+    for p in products:
+        b = p["marca"] or "(sin marca)"
+        brands[b] = brands.get(b, 0) + p["revenue"]
+    top_brands = sorted(brands.items(), key=lambda kv: kv[1], reverse=True)[:6]
+
+    stats = {
+        "revenue_mes":    total_rev,
+        "unidades_mes":   total_units,
+        "publicaciones":  len(products),
+        "ticket":         round(total_rev / total_units) if total_units else 0,
+        "top10_share":    round(top10_rev / total_rev * 100) if total_rev else 0,
+        "pct_full":       round(sum(1 for p in products if p["full"]) / len(products) * 100),
+        "pct_catalogo":   round(sum(1 for p in products if p["catalogo"]) / len(products) * 100),
+        "marcas":         [{"marca": b, "share": round(r / total_rev * 100) if total_rev else 0} for b, r in top_brands],
+    }
+
+    return jsonify({"seller": seller, "stats": stats, "top_products": products[:20]})
+
+
+@app.route("/api/comp-analyze", methods=["POST"])
+@login_required
+def comp_analyze():
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        return jsonify({"error": "ANTHROPIC_API_KEY no configurada."}), 500
+
+    data = request.get_json() or {}
+    sellers = data.get("sellers", [])
+    tc = data.get("tc", 1500)
+
+    if not sellers:
+        return jsonify({"error": "Sin competidores para analizar."}), 400
+
+    sellers_str = json.dumps(sellers[:5], ensure_ascii=False, indent=1)
+
+    prompt = (
+        f"Sos un experto en e-commerce en MercadoLibre Argentina y sourcing desde China.\n"
+        f"Te paso el catálogo mensual (export de Nubimetrics) de uno o más COMPETIDORES. "
+        f"Por cada uno: stats (revenue_mes, unidades, publicaciones, ticket, top10_share = % del "
+        f"revenue concentrado en el top 10, pct_full, marcas con share) y top 20 productos con "
+        f"precio real (ventas ÷ unidades — las unidades vienen redondeadas en bandas, son aproximadas).\n\n"
+        f"{sellers_str}\n\n"
+        f"CONTEXTO DEL ANALISTA (quien te consulta):\n"
+        f"- Ya importa por courier aéreo desde China (proveedores propios de fábrica directa, "
+        f"FOB reales ~1/3 del listado de Alibaba) y vende en MeLi: sensores de CO y protectores de tensión\n"
+        f"- Busca productos LIVIANOS (<1kg) para courier; los voluminosos/pesados no le sirven\n"
+        f"- REGLA COURIER 4×: el precio de venta ARS debe ser ≥ ~4× el FOB USD en miles para dar margen. "
+        f"Cálculo: neto = precio × 0,85 (comisión MeLi) − $7.000 (envío); "
+        f"landed = FOB × 1,975 × TC. Tipo de cambio actual: ${tc:,.0f} ARS/USD\n\n"
+        f"TAREA — por cada competidor:\n"
+        f"## [Nickname]\n"
+        f"1. **Perfil**: ¿concentrado (top10_share ≥ 60%) o cola larga? ¿Marca propia o revendedor? "
+        f"¿Qué estrategia usa (Full, catálogo, escalera de precios)? ¿Es un modelo a estudiar o descartar?\n"
+        f"2. **Huecos atacables por courier**: productos de su catálogo donde entrar conviene. Por cada uno:\n"
+        f"   - Precio real actual, unidades/mes, FOB estimado (fábrica directa, no listado Alibaba)\n"
+        f"   - Verificación regla 4× con margen estimado\n"
+        f"   - Veredicto: 🟢 Atacar / 🟡 Evaluar / 🔴 Evitar (con motivo: certificaciones, peso, margen)\n"
+        f"3. **Jugada premium**: ¿hay oportunidad de 'escalera' (versión premium/smart de sus commodities)?\n\n"
+        f"Al final una tabla resumen de TODOS los huecos:\n"
+        f"| Producto | Competidor | Precio real | Unid/mes | FOB est. | Margen est. | Veredicto |\n"
+        f"Y una recomendación final priorizada considerando su operación actual (CO, protectores).\n"
+        f"Usá formatos abreviados ($5.9M, 1.2k) y sé concreto."
+    )
+
+    def generate():
+        try:
+            client = anthropic.Anthropic(api_key=api_key)
+            chunks = []
+            with client.messages.stream(
+                model="claude-sonnet-4-6",
+                max_tokens=4000,
+                messages=[{"role": "user", "content": prompt}],
+            ) as stream:
+                for text in stream.text_stream:
+                    chunks.append(text)
+                    yield " "  # keep-alive: evita timeout del proxy de Railway
+            yield json.dumps({"analysis": "".join(chunks)})
+        except anthropic.APIError as e:
+            yield json.dumps({"error": str(e)})
+
+    return Response(
+        generate(),
+        mimetype="application/json",
+        headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
+    )
+
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(debug=False, host="0.0.0.0", port=port)
