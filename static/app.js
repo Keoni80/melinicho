@@ -200,6 +200,11 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     cdz.addEventListener('click', () => document.getElementById('comp-file-input').click());
 
+    // mis productos — página completa en pestaña nueva
+    document.getElementById('misprod-btn').addEventListener('click', () => {
+        window.open('/mis-productos', '_blank');
+    });
+
     // Buscador de Competidores
     document.getElementById('buscomp-btn').addEventListener('click', () => {
         document.getElementById('buscomp-modal').style.display = 'flex';

@@ -156,6 +156,29 @@ Needs `NODE_EXTRA_CA_CERTS` env var set if machine has AVG antivirus (SSL interc
 
 ---
 
+## Features added 2026-07-15
+
+### 📦 mis productos (monitoreo de operación propia)
+**Button:** "📦 mis productos" (cyan gradient `#006064` → `#00ACC1`, in the search bar) → opens `/mis-productos` in a new tab (standalone page, no localStorage handoff: the page fetches its own JSON).
+
+**Purpose:** table of all own active listings with: stock split (tu depósito vs Full), final price with active promotion, sales last 30 days per product, search-ranking position, user-defined monthly projection, and per-product AI sales strategy when selling < 50% of projection.
+
+**Key mechanics:**
+- **Grouping:** multiple listings of the same product (e.g. one Full + one self-shipped) collapse into one row. Heuristic: shared `inventory_id` (MeLi user-product) OR shared `catalog_product_id` OR normalized-title match, then reconciled against `product_config.item_ids` (manual merges survive re-grouping). Manual merge via 🔗 button → `POST /api/mis-productos/merge`.
+- **Stock Full:** items with `shipping.logistic_type == "fulfillment"` → `GET /inventories/{inventory_id}/stock/fulfillment` (available_quantity), deduped by inventory_id (several pubs can share stock). "Tu depósito" = `available_quantity` of non-fulfillment pubs (`xd_drop_off`).
+- **Final price:** the `/items` multiget does NOT return promotions (`sale_price` comes null even with an active deal) → `GET /items/{id}/prices` per item, parallelized with ThreadPoolExecutor(8) (`get_items_prices`). `promotion` type < standard = precio final. Works from server IPs (own items, OAuth).
+- **Sales 30d per product:** `fetch_sales_by_item` clones `fetch_orders_total` but aggregates `order_items[].item.id`. Both now retry on `429 local_rate_limited` (orders API rate-limits after ~20 consecutive pages).
+- **Position:** `get_item_position` runs ONE Apify search (`~25s`, keyword stored per product, editable in UI; default = `derive_keyword(title)` first 3 significant tokens). Match own listing by item_id, permalink, seller_id **and catalog_product_id** — catalog listings appear as `/p/MLA...` URLs with the catalog id, not the listing id (this was the original bug: own product at #2 not recognized). Result cached in `product_config` (`position`, `position_total`, `position_ts`, `position_competitors` = top-15 JSON). NEVER runs on page load — only per-row ↻ button or sequential "update all" loop client-side. Changing the keyword invalidates the cache.
+- **AI strategy:** button appears when `sales_30d_units < 0.5 * proyeccion_mes` (computed server-side, `needs_strategy`). `POST /api/mis-productos/estrategia` requires cached `position_competitors` (400 otherwise). Margin is precomputed in Python (`precio_final×0,85 − envío($7.000 si ≥$33k) − landed`) and injected into the prompt so Claude never invents arithmetic. Streaming keep-alive pattern, `claude-sonnet-4-6`, max_tokens=3000. Prompt includes the real top-15 listing with own row marked "→ VOS".
+
+**DB:** table `product_config` (item_ids JSON, landed_cost_ars, proyeccion_mes, keyword, position cache). Created in `init_products_table()`. **`DB_PATH` is now env-configurable** — set `DB_PATH=/data/melichnicho.db` + a Railway volume mounted at `/data` for persistence (without it the container DB is wiped per deploy).
+
+**Endpoints:** `GET /mis-productos` (page), `GET /api/mis-productos` (~30s load: items + orders 30d + prices + fulfillment stock), `POST /api/mis-productos/config` (partial update: proyeccion_mes / landed_cost_ars / keyword), `POST /api/mis-productos/position`, `POST /api/mis-productos/merge`, `POST /api/mis-productos/estrategia` (streaming).
+
+**Files:** `templates/mis_productos.html` (standalone, inline helpers — do NOT include app.js), `meli_api.py` (`fetch_sales_by_item`, `get_items_prices`, `get_fulfillment_stock`, `get_item_position`, `get_items_catalog_ids`, `derive_keyword`, `_refresh_lock` for thread-safe token refresh), `app.py` (grouping + endpoints at the end).
+
+---
+
 ## Features added 2026-07-04
 
 ### 🕵️ Buscador de Competidores module (vendedores con producto estrella)

@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>mis productos — MeLi Nicho</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #1A1A2E; --surface: #16213E; --surface2: #0F3460;
+    --accent: #FFE600; --text: #E0E0E0; --muted: #7A8499;
+    --green: #4CAF50; --red: #F44336; --cyan: #00ACC1;
+  }
+  body { background: var(--bg); color: var(--text);
+    font-family: 'Segoe UI', system-ui, sans-serif; font-size: 14px; line-height: 1.5; }
+  header { background: var(--surface); border-bottom: 2px solid var(--accent);
+    padding: .9rem 1.5rem; display: flex; align-items: center;
+    justify-content: space-between; gap: 1rem; flex-wrap: wrap;
+    position: sticky; top: 0; z-index: 10; }
+  .logo { font-size: 1.3rem; font-weight: 300; white-space: nowrap; }
+  .logo strong { color: var(--accent); font-weight: 800; }
+  .meta-chips { display: flex; gap: .5rem; flex-wrap: wrap; flex: 1; }
+  .chip { background: var(--surface2); border-radius: 20px; padding: .25rem .85rem;
+    font-size: .8rem; color: var(--muted); white-space: nowrap; }
+  .chip strong { color: var(--text); }
+  .btn { border: none; border-radius: 8px; padding: .45rem 1rem; font-size: .85rem;
+    font-weight: 700; cursor: pointer; background: var(--surface2); color: var(--text); }
+  .btn:hover { opacity: .85; }
+  .btn:disabled { opacity: .45; cursor: default; }
+  .btn-accent { background: var(--accent); color: #1A1A2E; }
+  main { max-width: 1400px; margin: 0 auto; padding: 1.5rem 1rem 4rem; }
+  #loading { display: flex; flex-direction: column; align-items: center; justify-content: center;
+    height: 55vh; color: var(--muted); font-size: 1.05rem; gap: .75rem; text-align: center; }
+  .spinner { width: 34px; height: 34px; border: 4px solid var(--surface2);
+    border-top-color: var(--accent); border-radius: 50%; animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #error-box { display: none; background: rgba(244,67,54,.12); border: 1px solid var(--red);
+    border-radius: 8px; padding: .8rem 1.2rem; margin-bottom: 1rem; color: #ff9a92; }
+
+  table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+  thead th { background: var(--surface2); color: var(--muted); font-size: .72rem;
+    text-transform: uppercase; letter-spacing: .04em; padding: .55rem .6rem;
+    text-align: left; position: sticky; top: 66px; z-index: 5; }
+  thead th.num { text-align: right; }
+  td { padding: .55rem .6rem; border-bottom: 1px solid var(--surface2); vertical-align: middle; }
+  td.num { text-align: right; white-space: nowrap; }
+  tr.prod-row:hover td { background: rgba(15,52,96,.35); }
+
+  .prod-cell { display: flex; align-items: center; gap: .6rem; min-width: 260px; }
+  .prod-cell img { width: 44px; height: 44px; border-radius: 6px; object-fit: cover;
+    background: var(--surface2); flex-shrink: 0; }
+  .prod-info { min-width: 0; }
+  .prod-title { color: var(--text); font-weight: 600; text-decoration: none; display: block;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 340px; }
+  .prod-title:hover { color: var(--accent); }
+  .prod-ids { font-size: .72rem; color: var(--muted); }
+  .kw-input { background: transparent; border: 1px solid transparent; border-radius: 5px;
+    color: var(--muted); font-size: .75rem; padding: .1rem .3rem; width: 100%; max-width: 240px; }
+  .kw-input:hover, .kw-input:focus { border-color: var(--surface2); background: var(--bg);
+    color: var(--text); outline: none; }
+
+  .badge-full { background: rgba(0,172,193,.15); color: var(--cyan); border-radius: 5px;
+    padding: .05rem .4rem; font-size: .78rem; font-weight: 700; }
+  .price-old { color: var(--muted); text-decoration: line-through; font-size: .78rem; }
+  .price-final { color: var(--accent); font-weight: 700; }
+  .sales-low { background: rgba(244,67,54,.12) !important; }
+  .sales-sub { font-size: .72rem; color: var(--muted); }
+  .pos-age { font-size: .7rem; color: var(--muted); display: block; }
+  .btn-mini { border: none; border-radius: 6px; background: var(--surface2); color: var(--text);
+    padding: .2rem .5rem; font-size: .78rem; cursor: pointer; }
+  .btn-mini:hover { background: var(--cyan); color: #fff; }
+  .btn-mini:disabled { opacity: .5; cursor: default; }
+  .btn-strategy { border: none; border-radius: 6px; padding: .3rem .6rem; font-size: .78rem;
+    font-weight: 700; cursor: pointer; background: linear-gradient(135deg, #006064, #00ACC1);
+    color: #fff; white-space: nowrap; }
+  .btn-strategy:hover { opacity: .85; }
+  .btn-strategy:disabled { opacity: .5; cursor: default; }
+
+  .cfg-input { background: var(--bg); border: 1px solid var(--surface2); border-radius: 6px;
+    color: var(--text); font-size: .85rem; padding: .25rem .4rem; width: 5.2rem; text-align: right;
+    transition: border-color .3s; }
+  .cfg-input:focus { outline: none; border-color: var(--accent); }
+  .cfg-input.saved { border-color: var(--green); }
+
+  tr.strategy-row td { background: var(--surface); padding: 1rem 1.4rem; }
+  .strategy-box h3, .strategy-box h4, .strategy-box h2 { color: var(--accent); margin: .8rem 0 .3rem; }
+  .strategy-box ul { padding-left: 1.3rem; margin: .3rem 0 .6rem; }
+  .strategy-box table { margin: .5rem 0; font-size: .82rem; }
+  .strategy-box th { background: var(--surface2); color: var(--muted); padding: .4rem .6rem; position: static; }
+  .strategy-box code { background: var(--bg); border-radius: 4px; padding: .1rem .35rem; }
+  .strategy-loading { color: var(--muted); display: flex; align-items: center; gap: .6rem; }
+  .spinner-sm { width: 18px; height: 18px; border: 3px solid var(--surface2);
+    border-top-color: var(--accent); border-radius: 50%; animation: spin 1s linear infinite; }
+
+  dialog { background: var(--surface); color: var(--text); border: 1px solid var(--surface2);
+    border-radius: 10px; padding: 1.2rem; max-width: 420px; }
+  dialog::backdrop { background: rgba(0,0,0,.6); }
+  dialog select { width: 100%; margin: .8rem 0; background: var(--bg); color: var(--text);
+    border: 1px solid var(--surface2); border-radius: 6px; padding: .4rem; }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">📦 mis <strong>productos</strong></div>
+  <div class="meta-chips" id="meta-chips"></div>
+  <button class="btn" id="btn-all-pos" style="display:none">↻ Actualizar todas las posiciones</button>
+  <button class="btn btn-accent" onclick="loadData()">↻ Recargar</button>
+</header>
+<main>
+  <div id="error-box"></div>
+  <div id="loading">
+    <div class="spinner"></div>
+    <div>Cargando publicaciones, stock, precios y ventas de 30 días…<br>
+    <span style="font-size:.85rem">puede tardar ~30 segundos</span></div>
+  </div>
+  <div id="content" style="display:none">
+    <table>
+      <thead>
+        <tr>
+          <th>Producto</th>
+          <th class="num">Tu depósito</th>
+          <th class="num">Full ⚡</th>
+          <th class="num">Precio final</th>
+          <th class="num">Ventas 30d</th>
+          <th class="num">Posición</th>
+          <th class="num">Proyección u/mes</th>
+          <th class="num">Landed $</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+</main>
+
+<dialog id="merge-dialog">
+  <div><strong>Vincular publicación</strong></div>
+  <div style="font-size:.85rem;color:var(--muted);margin-top:.3rem">
+    Uní este producto con otra fila que sea el mismo producto (ej. la versión Full).
+    Las dos filas pasan a ser una.</div>
+  <select id="merge-select"></select>
+  <div style="display:flex;gap:.6rem;justify-content:flex-end">
+    <button class="btn" onclick="document.getElementById('merge-dialog').close()">Cancelar</button>
+    <button class="btn btn-accent" id="merge-confirm">Vincular</button>
+  </div>
+</dialog>
+
+<script>
+let products = [];
+
+function fmtPrice(p) {
+    return new Intl.NumberFormat('es-AR', {
+        style: 'currency', currency: 'ARS', maximumFractionDigits: 0,
+    }).format(p || 0);
+}
+
+function esc(str) {
+    if (str == null) return '';
+    return String(str)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function renderInline(text) {
+    return esc(text)
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.+?)\*/g, '<em>$1</em>')
+        .replace(/`(.+?)`/g, '<code>$1</code>');
+}
+
+function mdToHtml(md) {
+    const lines = md.split('\n');
+    const out = [];
+    let inTable = false, inList = false;
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (line.trim().startsWith('|')) {
+            if (inList) { out.push('</ul>'); inList = false; }
+            if (!inTable) { out.push('<table><tbody>'); inTable = true; }
+            if (/^\|[-| :]+\|$/.test(line.trim())) continue;
+            const cells = line.trim().replace(/^\||\|$/g, '').split('|').map(c => c.trim());
+            const isHeader = (i + 1 < lines.length && /^\|[-| :]+\|$/.test(lines[i+1]?.trim()));
+            const tag = isHeader ? 'th' : 'td';
+            out.push('<tr>' + cells.map(c => `<${tag}>${renderInline(c)}</${tag}>`).join('') + '</tr>');
+            continue;
+        } else if (inTable) { out.push('</tbody></table>'); inTable = false; }
+        if (/^[-•*] /.test(line.trim())) {
+            if (!inList) { out.push('<ul>'); inList = true; }
+            out.push(`<li>${renderInline(line.trim().slice(2))}</li>`);
+            continue;
+        } else if (inList) { out.push('</ul>'); inList = false; }
+        if (/^### /.test(line)) out.push(`<h4>${renderInline(line.slice(4))}</h4>`);
+        else if (/^## /.test(line)) out.push(`<h3>${renderInline(line.slice(3))}</h3>`);
+        else if (/^# /.test(line)) out.push(`<h2>${renderInline(line.slice(2))}</h2>`);
+        else if (/^---/.test(line.trim())) out.push('<hr style="border-color:var(--surface2);margin:.6rem 0">');
+        else if (line.trim() === '') out.push('');
+        else out.push(`<p style="margin:.25rem 0">${renderInline(line)}</p>`);
+    }
+    if (inList) out.push('</ul>');
+    if (inTable) out.push('</tbody></table>');
+    return out.join('');
+}
+
+function posAge(ts) {
+    if (!ts) return '';
+    const diff = (Date.now() - new Date(ts).getTime()) / 1000;
+    if (diff < 3600) return `hace ${Math.max(1, Math.round(diff / 60))}m`;
+    if (diff < 86400) return `hace ${Math.round(diff / 3600)}h`;
+    return `hace ${Math.round(diff / 86400)}d`;
+}
+
+function showError(msg) {
+    const el = document.getElementById('error-box');
+    if (msg) { el.textContent = '⚠ ' + msg; el.style.display = 'block'; }
+    else el.style.display = 'none';
+}
+
+async function loadData() {
+    showError('');
+    document.getElementById('content').style.display = 'none';
+    document.getElementById('loading').style.display = 'flex';
+    try {
+        const resp = await fetch('/api/mis-productos');
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error || `Error ${resp.status}`);
+        products = data.products;
+        renderChips(data);
+        renderTable();
+        document.getElementById('btn-all-pos').style.display = '';
+        document.getElementById('content').style.display = 'block';
+    } catch (e) {
+        showError(e.message);
+    } finally {
+        document.getElementById('loading').style.display = 'none';
+    }
+}
+
+function renderChips(data) {
+    const totalUnits = products.reduce((a, p) => a + p.sales_30d_units, 0);
+    const totalRev = products.reduce((a, p) => a + p.sales_30d_revenue, 0);
+    const low = products.filter(p => p.needs_strategy).length;
+    document.getElementById('meta-chips').innerHTML =
+        `<span class="chip"><strong>${products.length}</strong> productos</span>` +
+        `<span class="chip">ventas 30d: <strong>${totalUnits.toLocaleString('es-AR')} u · ${fmtPrice(totalRev)}</strong></span>` +
+        (low ? `<span class="chip" style="color:var(--red)"><strong>${low}</strong> bajo proyección</span>` : '') +
+        `<span class="chip">al ${esc(data.as_of)}</span>`;
+}
+
+function rowHtml(p) {
+    const priceCell = p.sale_price
+        ? `<span class="price-old">${fmtPrice(p.price)}</span><br><span class="price-final">${fmtPrice(p.sale_price)}</span>`
+        : `<span class="price-final">${fmtPrice(p.price)}</span>`;
+    const posCell = p.position
+        ? `#${p.position}${p.position_total ? '/' + p.position_total : ''}`
+        : (p.position_ts ? `>${p.position_total || 48}` : '—');
+    const salesCls = p.needs_strategy ? ' class="num sales-low"' : ' class="num"';
+    const proyPct = p.proyeccion_mes
+        ? `<span class="sales-sub">${Math.round(p.sales_30d_units / p.proyeccion_mes * 100)}% de proy.</span>` : '';
+    return `
+    <tr class="prod-row" data-gid="${p.group_id}">
+      <td>
+        <div class="prod-cell">
+          <img src="${esc(p.thumbnail)}" loading="lazy" onerror="this.style.visibility='hidden'">
+          <div class="prod-info">
+            <a class="prod-title" href="${esc(p.permalink)}" target="_blank" title="${esc(p.title)}">${esc(p.title)}</a>
+            <span class="prod-ids">${p.items.map(i => i.id).join(' + ')}</span><br>
+            <input class="kw-input" value="${esc(p.keyword)}" title="Keyword de búsqueda para el posicionamiento"
+                   onchange="saveConfig(${p.group_id}, 'keyword', this.value, this)">
+          </div>
+        </div>
+      </td>
+      <td class="num">${p.stock_deposito.toLocaleString('es-AR')}</td>
+      <td class="num">${p.stock_full ? `<span class="badge-full">⚡ ${p.stock_full.toLocaleString('es-AR')}</span>` : '—'}</td>
+      <td class="num">${priceCell}</td>
+      <td${salesCls}><strong>${p.sales_30d_units.toLocaleString('es-AR')} u</strong><br>
+        <span class="sales-sub">${fmtPrice(p.sales_30d_revenue)}</span> ${proyPct}</td>
+      <td class="num">${posCell}
+        <span class="pos-age">${posAge(p.position_ts)}</span>
+        <button class="btn-mini" onclick="updatePosition(${p.group_id}, this)" title="Actualizar posición (~25s, usa Apify)">↻</button></td>
+      <td class="num"><input class="cfg-input" type="number" min="0" value="${p.proyeccion_mes ?? ''}"
+        placeholder="—" onchange="saveConfig(${p.group_id}, 'proyeccion_mes', this.value, this)"></td>
+      <td class="num"><input class="cfg-input" type="number" min="0" value="${p.landed_cost_ars ?? ''}"
+        placeholder="—" onchange="saveConfig(${p.group_id}, 'landed_cost_ars', this.value, this)"></td>
+      <td style="white-space:nowrap">
+        ${p.needs_strategy ? `<button class="btn-strategy" onclick="runStrategy(${p.group_id}, this)">💡 Sugerir estrategia</button>` : ''}
+        <button class="btn-mini" onclick="openMerge(${p.group_id})" title="Vincular con otra fila del mismo producto">🔗</button>
+      </td>
+    </tr>`;
+}
+
+function renderTable() {
+    document.getElementById('rows').innerHTML = products.map(rowHtml).join('');
+}
+
+function refreshRow(p) {
+    const tr = document.querySelector(`tr.prod-row[data-gid="${p.group_id}"]`);
+    if (!tr) return;
+    tr.outerHTML = rowHtml(p);
+}
+
+async function saveConfig(gid, field, value, input) {
+    try {
+        const resp = await fetch('/api/mis-productos/config', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ group_id: gid, [field]: value }),
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error || `Error ${resp.status}`);
+        input.classList.add('saved');
+        setTimeout(() => input.classList.remove('saved'), 1500);
+        const p = products.find(x => x.group_id === gid);
+        if (p) {
+            if (field === 'proyeccion_mes') {
+                p.proyeccion_mes = value === '' ? null : parseInt(value, 10);
+                p.needs_strategy = !!p.proyeccion_mes && p.sales_30d_units < 0.5 * p.proyeccion_mes;
+                refreshRow(p);
+            } else if (field === 'landed_cost_ars') {
+                p.landed_cost_ars = value === '' ? null : parseFloat(value);
+            } else if (field === 'keyword') {
+                p.keyword = value.trim().toLowerCase();
+                p.position = null; p.position_total = null; p.position_ts = null;
+                refreshRow(p);
+            }
+        }
+    } catch (e) { showError(e.message); }
+}
+
+async function updatePosition(gid, btn) {
+    const p = products.find(x => x.group_id === gid);
+    if (!p) return;
+    btn.disabled = true;
+    btn.textContent = '⏳';
+    btn.title = 'Buscando en el listado real (~25s)…';
+    try {
+        const resp = await fetch('/api/mis-productos/position', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ group_id: gid }),
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error || `Error ${resp.status}`);
+        p.position = data.position; p.position_total = data.total; p.position_ts = data.ts;
+        refreshRow(p);
+    } catch (e) {
+        showError(e.message);
+        btn.disabled = false; btn.textContent = '↻';
+    }
+}
+
+document.getElementById('btn-all-pos').addEventListener('click', async function () {
+    if (!confirm(`Esto corre una búsqueda Apify por producto (${products.length} corridas, ~25s cada una). ¿Continuar?`)) return;
+    this.disabled = true;
+    for (let i = 0; i < products.length; i++) {
+        this.textContent = `⏳ ${i + 1}/${products.length}…`;
+        const btn = document.querySelector(`tr.prod-row[data-gid="${products[i].group_id}"] .btn-mini`);
+        await updatePosition(products[i].group_id, btn || this);
+    }
+    this.disabled = false;
+    this.textContent = '↻ Actualizar todas las posiciones';
+});
+
+async function runStrategy(gid, btn) {
+    const p = products.find(x => x.group_id === gid);
+    if (!p) return;
+    const tr = document.querySelector(`tr.prod-row[data-gid="${gid}"]`);
+    document.querySelectorAll('tr.strategy-row').forEach(el => el.remove());
+    const stratRow = document.createElement('tr');
+    stratRow.className = 'strategy-row';
+    stratRow.innerHTML = `<td colspan="9"><div class="strategy-loading"><div class="spinner-sm"></div>
+        Analizando estrategia con IA (puede tardar 1-2 minutos)…</div></td>`;
+    tr.after(stratRow);
+    btn.disabled = true;
+    try {
+        const resp = await fetch('/api/mis-productos/estrategia', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ group_id: gid, product: p }),
+        });
+        const raw = await resp.text();
+        let data;
+        try { data = JSON.parse(raw.trim()); }
+        catch { throw new Error(resp.ok ? 'Respuesta inválida del servidor' : `Error ${resp.status}`); }
+        if (data.error) throw new Error(data.error);
+        stratRow.innerHTML = `<td colspan="9"><div class="strategy-box">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.4rem">
+              <strong style="color:var(--accent)">💡 Estrategia — ${esc(p.title)}</strong>
+              <button class="btn-mini" onclick="this.closest('tr').remove()">✕ cerrar</button>
+            </div>${mdToHtml(data.analysis)}</div></td>`;
+    } catch (e) {
+        stratRow.innerHTML = `<td colspan="9" style="color:var(--red)">⚠ ${esc(e.message)}
+            <button class="btn-mini" onclick="this.closest('tr').remove()">✕</button></td>`;
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+function openMerge(gid) {
+    const p = products.find(x => x.group_id === gid);
+    const sel = document.getElementById('merge-select');
+    sel.innerHTML = products.filter(x => x.group_id !== gid)
+        .map(x => `<option value="${x.group_id}">${esc(x.title.slice(0, 60))}</option>`).join('');
+    const dlg = document.getElementById('merge-dialog');
+    document.getElementById('merge-confirm').onclick = async () => {
+        try {
+            const resp = await fetch('/api/mis-productos/merge', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ keep_id: gid, merge_id: parseInt(sel.value, 10) }),
+            });
+            const data = await resp.json();
+            if (!resp.ok) throw new Error(data.error || `Error ${resp.status}`);
+            dlg.close();
+            loadData();
+        } catch (e) { dlg.close(); showError(e.message); }
+    };
+    dlg.showModal();
+}
+
+loadData();
+</script>
+</body>
+</html>

@@ -16,12 +16,17 @@ from flask import Flask, Response, jsonify, redirect, render_template, request, 
 from functools import wraps
 
 from analyzer import analyze_niche
-from meli_api import fetch_orders_total, get_categories, get_my_store_items, get_my_user_id, get_subcategories, sample_subcategory, search_meli
+from meli_api import (
+    derive_keyword, fetch_orders_total, fetch_sales_by_item, get_categories,
+    get_fulfillment_stock, get_item_position, get_items_catalog_ids, get_items_prices,
+    get_my_store_items, get_my_user_id, get_subcategories, sample_subcategory, search_meli,
+)
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", secrets.token_hex(32))
 app.config["MAX_CONTENT_LENGTH"] = 120 * 1024 * 1024  # 120 MB
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "melichnicho.db")
+# DB_PATH configurable para apuntar a un volumen persistente en Railway
+DB_PATH = os.environ.get("DB_PATH") or os.path.join(os.path.dirname(os.path.abspath(__file__)), "melichnicho.db")
 
 
 def init_db():
@@ -79,8 +84,27 @@ def init_users_table():
             logging.info(f"Users in DB: {count}")
 
 
+def init_products_table():
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS product_config (
+                id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+                item_ids             TEXT NOT NULL DEFAULT '[]',
+                landed_cost_ars      REAL,
+                proyeccion_mes       INTEGER,
+                keyword              TEXT,
+                position             INTEGER,
+                position_total       INTEGER,
+                position_ts          DATETIME,
+                position_competitors TEXT,
+                updated_at           DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+
 init_db()
 init_users_table()
+init_products_table()
 
 
 def login_required(f):
@@ -1384,6 +1408,353 @@ def buscomp_analyze():
             with client.messages.stream(
                 model="claude-sonnet-4-6",
                 max_tokens=4000,
+                messages=[{"role": "user", "content": prompt}],
+            ) as stream:
+                for text in stream.text_stream:
+                    chunks.append(text)
+                    yield " "  # keep-alive: evita timeout del proxy de Railway
+            yield json.dumps({"analysis": "".join(chunks)})
+        except anthropic.APIError as e:
+            yield json.dumps({"error": str(e)})
+
+    return Response(
+        generate(),
+        mimetype="application/json",
+        headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
+    )
+
+
+# ---------------------------------------------------------------------------
+# mis productos: stock depósito/Full, precio final, ventas 30d, posicionamiento
+# ---------------------------------------------------------------------------
+
+def _title_key(title):
+    tokens = sorted(w for w in re.split(r"[^\wáéíóúüñ]+", (title or "").lower()) if len(w) >= 3)
+    return " ".join(tokens)
+
+
+def _group_store_items(items):
+    """Agrupa publicaciones del mismo producto: comparten inventory_id,
+    catalog_product_id o título normalizado (una pub Full + una propia = una fila)."""
+    groups = []
+    by_key = {}
+    for it in items:
+        keys = [("tit", _title_key(it["title"]))]
+        if it.get("inventory_id"):
+            keys.append(("inv", it["inventory_id"]))
+        if it.get("catalog_product_id"):
+            keys.append(("cat", it["catalog_product_id"]))
+        group = next((by_key[k] for k in keys if k in by_key), None)
+        if group is None:
+            group = {"items": []}
+            groups.append(group)
+        group["items"].append(it)
+        for k in keys:
+            by_key[k] = group
+    return groups
+
+
+def _reconcile_product_config(groups):
+    """Asocia cada grupo con su fila de product_config por intersección de item_ids.
+
+    Si una fila de config abarca varios grupos heurísticos (merge manual), los une.
+    Grupos sin config → INSERT con keyword derivada del título principal.
+    """
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = [dict(r) for r in conn.execute("SELECT * FROM product_config ORDER BY id")]
+        for r in rows:
+            r["_ids"] = set(json.loads(r["item_ids"] or "[]"))
+
+        merged = []
+        remaining = list(groups)
+        for r in rows:
+            mine = [g for g in remaining if r["_ids"] & {i["id"] for i in g["items"]}]
+            if not mine:
+                continue
+            union_group = {"items": [i for g in mine for i in g["items"]], "config": r}
+            remaining = [g for g in remaining if g not in mine]
+            merged.append(union_group)
+            all_ids = sorted(r["_ids"] | {i["id"] for i in union_group["items"]})
+            if set(all_ids) != r["_ids"]:
+                conn.execute(
+                    "UPDATE product_config SET item_ids = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (json.dumps(all_ids), r["id"]),
+                )
+
+        for g in remaining:
+            main = max(g["items"], key=lambda i: i.get("revenue", 0))
+            kw = derive_keyword(main["title"])
+            ids = sorted(i["id"] for i in g["items"])
+            cur = conn.execute(
+                "INSERT INTO product_config (item_ids, keyword) VALUES (?, ?)",
+                (json.dumps(ids), kw),
+            )
+            g["config"] = {
+                "id": cur.lastrowid, "keyword": kw, "landed_cost_ars": None,
+                "proyeccion_mes": None, "position": None, "position_total": None,
+                "position_ts": None, "position_competitors": None,
+            }
+            merged.append(g)
+    return merged
+
+
+@app.route("/mis-productos")
+@login_required
+def mis_productos_page():
+    return render_template("mis_productos.html")
+
+
+@app.route("/api/mis-productos")
+@login_required
+def mis_productos_data():
+    from datetime import datetime, timezone, timedelta
+
+    items, error = get_my_store_items()
+    if error:
+        return jsonify({"error": error}), 502
+    items = [i for i in items if i["status"] == "active"]
+    if not items:
+        return jsonify({"products": [], "as_of": ""})
+
+    user_id = get_my_user_id()
+    tz_arg = timezone(timedelta(hours=-3))
+    now = datetime.now(tz_arg)
+    fmt = '%Y-%m-%dT%H:%M:%S.000-0300'
+    sales = {}
+    if user_id:
+        sales = fetch_sales_by_item(user_id, (now - timedelta(days=30)).strftime(fmt), now.strftime(fmt))
+
+    prices = get_items_prices([i["id"] for i in items])
+
+    # Stock Full por inventory (deduplicado: varias pubs pueden compartir inventario)
+    full_invs = {i["inventory_id"] for i in items if i["logistic_type"] == "fulfillment" and i["inventory_id"]}
+    full_stock = {inv: get_fulfillment_stock(inv) for inv in full_invs}
+
+    groups = _reconcile_product_config(_group_store_items(items))
+
+    products = []
+    for g in groups:
+        cfg = g["config"]
+        its = g["items"]
+        main = max(its, key=lambda i: i.get("revenue", 0))
+
+        stock_deposito = sum(i["available_quantity"] for i in its if i["logistic_type"] != "fulfillment")
+        invs = {i["inventory_id"] for i in its if i["logistic_type"] == "fulfillment" and i["inventory_id"]}
+        stock_full = 0
+        for inv in invs:
+            if full_stock.get(inv) is not None:
+                stock_full += full_stock[inv]
+            else:  # fallback: available_quantity de la pub Full de ese inventario
+                stock_full += max((i["available_quantity"] for i in its if i["inventory_id"] == inv), default=0)
+        stock_full += sum(i["available_quantity"] for i in its
+                          if i["logistic_type"] == "fulfillment" and not i["inventory_id"])
+
+        price = prices.get(main["id"], {}).get("standard") or main["price"]
+        deals = [prices[i["id"]]["deal"] for i in its if prices.get(i["id"], {}).get("deal")]
+        sale_price = min(deals) if deals else None
+
+        units_30d = sum(sales.get(i["id"], {}).get("units", 0) for i in its)
+        revenue_30d = sum(sales.get(i["id"], {}).get("revenue", 0) for i in its)
+        proyeccion = cfg.get("proyeccion_mes")
+
+        products.append({
+            "group_id": cfg["id"],
+            "title": main["title"],
+            "thumbnail": main["thumbnail"],
+            "permalink": main["permalink"],
+            "items": [{"id": i["id"], "logistic": i["logistic_type"], "stock": i["available_quantity"]} for i in its],
+            "stock_deposito": stock_deposito,
+            "stock_full": stock_full,
+            "price": price,
+            "sale_price": sale_price,
+            "sales_30d_units": units_30d,
+            "sales_30d_revenue": revenue_30d,
+            "keyword": cfg.get("keyword") or "",
+            "position": cfg.get("position"),
+            "position_total": cfg.get("position_total"),
+            "position_ts": cfg.get("position_ts"),
+            "landed_cost_ars": cfg.get("landed_cost_ars"),
+            "proyeccion_mes": proyeccion,
+            "needs_strategy": bool(proyeccion) and units_30d < 0.5 * proyeccion,
+        })
+
+    products.sort(key=lambda p: -p["sales_30d_revenue"])
+    return jsonify({"products": products, "as_of": now.strftime('%H:%M')})
+
+
+@app.route("/api/mis-productos/config", methods=["POST"])
+@login_required
+def mis_productos_config():
+    data = request.get_json() or {}
+    group_id = data.get("group_id")
+    if not group_id:
+        return jsonify({"error": "Falta group_id"}), 400
+
+    fields = {}
+    if "proyeccion_mes" in data:
+        v = data["proyeccion_mes"]
+        fields["proyeccion_mes"] = int(v) if v not in (None, "") else None
+    if "landed_cost_ars" in data:
+        v = data["landed_cost_ars"]
+        fields["landed_cost_ars"] = float(v) if v not in (None, "") else None
+    if "keyword" in data:
+        fields["keyword"] = (data["keyword"] or "").strip().lower()
+    if not fields:
+        return jsonify({"error": "Nada para actualizar"}), 400
+
+    sets = ", ".join(f"{k} = ?" for k in fields)
+    vals = list(fields.values())
+    if "keyword" in fields:  # keyword nueva invalida el caché de posición
+        sets += ", position = NULL, position_total = NULL, position_ts = NULL, position_competitors = NULL"
+    with sqlite3.connect(DB_PATH) as conn:
+        cur = conn.execute(
+            f"UPDATE product_config SET {sets}, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            vals + [group_id],
+        )
+    if cur.rowcount == 0:
+        return jsonify({"error": "Producto no encontrado"}), 404
+    return jsonify({"ok": True})
+
+
+@app.route("/api/mis-productos/merge", methods=["POST"])
+@login_required
+def mis_productos_merge():
+    data = request.get_json() or {}
+    keep_id, merge_id = data.get("keep_id"), data.get("merge_id")
+    if not keep_id or not merge_id or keep_id == merge_id:
+        return jsonify({"error": "IDs inválidos"}), 400
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        keep = conn.execute("SELECT item_ids FROM product_config WHERE id = ?", (keep_id,)).fetchone()
+        merge = conn.execute("SELECT item_ids FROM product_config WHERE id = ?", (merge_id,)).fetchone()
+        if not keep or not merge:
+            return jsonify({"error": "Producto no encontrado"}), 404
+        union = sorted(set(json.loads(keep["item_ids"])) | set(json.loads(merge["item_ids"])))
+        conn.execute(
+            "UPDATE product_config SET item_ids = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (json.dumps(union), keep_id),
+        )
+        conn.execute("DELETE FROM product_config WHERE id = ?", (merge_id,))
+    return jsonify({"ok": True})
+
+
+@app.route("/api/mis-productos/position", methods=["POST"])
+@login_required
+def mis_productos_position():
+    from datetime import datetime, timezone, timedelta
+
+    data = request.get_json() or {}
+    group_id = data.get("group_id")
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT * FROM product_config WHERE id = ?", (group_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "Producto no encontrado"}), 404
+    keyword = (row["keyword"] or "").strip()
+    if not keyword:
+        return jsonify({"error": "Definí una keyword para este producto primero."}), 400
+
+    item_ids = json.loads(row["item_ids"] or "[]")
+    seller_id = get_my_user_id()
+    catalog_ids = get_items_catalog_ids(item_ids)
+    position, total, competitors = get_item_position(item_ids, seller_id, keyword, catalog_ids)
+    if total == 0:
+        return jsonify({"error": "La búsqueda no devolvió resultados. Probá de nuevo o ajustá la keyword."}), 502
+
+    ts = datetime.now(timezone(timedelta(hours=-3))).strftime('%Y-%m-%dT%H:%M:%S')
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            "UPDATE product_config SET position = ?, position_total = ?, position_ts = ?, "
+            "position_competitors = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (position, total, ts, json.dumps(competitors, ensure_ascii=False), group_id),
+        )
+    return jsonify({"position": position, "total": total, "ts": ts})
+
+
+@app.route("/api/mis-productos/estrategia", methods=["POST"])
+@login_required
+def mis_productos_estrategia():
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        return jsonify({"error": "ANTHROPIC_API_KEY no configurada."}), 500
+
+    data = request.get_json() or {}
+    product = data.get("product") or {}
+    group_id = data.get("group_id") or product.get("group_id")
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT * FROM product_config WHERE id = ?", (group_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "Producto no encontrado"}), 404
+    competitors = json.loads(row["position_competitors"] or "[]")
+    if not competitors:
+        return jsonify({"error": "Actualizá primero el posicionamiento de este producto (botón ↻)."}), 400
+
+    price = float(product.get("price") or 0)
+    sale_price = float(product.get("sale_price") or 0) or None
+    precio_final = sale_price or price
+    landed = row["landed_cost_ars"]
+    proyeccion = row["proyeccion_mes"]
+    units_30d = int(product.get("sales_30d_units") or 0)
+    stock_dep = int(product.get("stock_deposito") or 0)
+    stock_full = int(product.get("stock_full") or 0)
+
+    # Margen precalculado acá: la IA no debe inventar aritmética
+    envio = 7000 if precio_final >= 33000 else 0
+    if landed and precio_final:
+        margen = precio_final * 0.85 - envio - landed
+        margen_txt = (f"${margen:,.0f} ARS/u ({margen / precio_final * 100:.0f}% del precio) "
+                      f"[= {precio_final:,.0f}×0,85 − {envio:,} envío − {landed:,.0f} landed]")
+    else:
+        margen_txt = "desconocido (falta cargar el costo landed)"
+
+    comp_lines = "\n".join(
+        f"{'→ VOS  ' if c.get('is_mine') else '       '}#{c['pos']:>2} | ${c['price']:>12,.0f} | "
+        f"{c['title'][:70]} | {c.get('seller_name', '')}"
+        + (" | envío gratis" if c.get("free_shipping") else "")
+        for c in competitors
+    )
+    pos_txt = f"#{row['position']} de {row['position_total']}" if row["position"] else \
+              f"no aparece entre los primeros {row['position_total']} resultados"
+
+    prompt = (
+        "Sos un experto en ventas en MercadoLibre Argentina. Asesorás a un vendedor que "
+        "importa por courier desde China (proveedores de fábrica directa) y vende con margen controlado.\n\n"
+        "PRODUCTO BAJO ANÁLISIS:\n"
+        f"- Título: {product.get('title', '')}\n"
+        f"- Precio de lista: ${price:,.0f} ARS"
+        + (f" | Precio final con promo activa: ${sale_price:,.0f} ARS\n" if sale_price else " (sin promoción activa)\n")
+        + f"- Stock: {stock_dep} u en depósito propio + {stock_full} u en Full\n"
+        f"- Ventas últimos 30 días: {units_30d} unidades (${float(product.get('sales_30d_revenue') or 0):,.0f} ARS)\n"
+        + (f"- Proyección del vendedor: {proyeccion} u/mes → viene vendiendo al "
+           f"{units_30d / proyeccion * 100:.0f}% de lo proyectado\n" if proyeccion else "")
+        + (f"- Costo landed (puesto en Argentina): ${landed:,.0f} ARS/u\n" if landed else "")
+        + f"- Margen actual por unidad: {margen_txt}\n"
+        "- Estructura de costos: comisión MeLi 15%; envío a cargo del vendedor $7.000 si precio ≥ $33.000\n\n"
+        f"POSICIONAMIENTO en la búsqueda \"{row['keyword']}\" (medido {row['position_ts'] or 's/d'}):\n"
+        f"Posición: {pos_txt}. Primeros resultados reales del listado:\n{comp_lines}\n\n"
+        f"TAREA — estrategia concreta para {'llegar a ' + str(proyeccion) + ' u/mes' if proyeccion else 'vender más'}:\n"
+        "1. **Diagnóstico**: ¿el problema es precio, posición, competencia, título o logística?\n"
+        "2. **Precio**: compará contra los competidores del listado real. Si sugerís descuento o "
+        "nuevo precio, calculá el margen resultante en $/u y % usando la estructura de costos de arriba. "
+        "NUNCA sugieras un precio que deje margen menor al 20% del precio de venta"
+        + (" (el landed es $%s)" % f"{landed:,.0f}" if landed else "") + ".\n"
+        "3. **Posicionamiento**: mejoras concretas de título/keyword, si conviene Product Ads "
+        "(estimá el ACOS tolerable con el margen disponible), y si conviene mandar stock a Full "
+        "(impacto en ranking y buy box).\n"
+        "4. **Plan de acción priorizado**: 3 a 5 pasos concretos, cada uno con impacto esperado.\n\n"
+        "Formato: markdown con ### por sección, veredicto 🟢🟡🔴 en cada palanca. "
+        "Montos abreviados ($85k, $1,2M). Sé directo y accionable, sin relleno."
+    )
+
+    def generate():
+        try:
+            client = anthropic.Anthropic(api_key=api_key)
+            chunks = []
+            with client.messages.stream(
+                model="claude-sonnet-4-6",
+                max_tokens=3000,
                 messages=[{"role": "user", "content": prompt}],
             ) as stream:
                 for text in stream.text_stream:

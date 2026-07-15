@@ -622,6 +622,22 @@ main {
 .btn-buscomp:active { transform: scale(.97); }
 .btn-buscomp:disabled { opacity: .45; cursor: not-allowed; }
 
+.btn-misprod {
+    background: linear-gradient(135deg, #006064 0%, #00ACC1 100%);
+    color: #fff;
+    border: none;
+    border-radius: var(--r);
+    padding: .7rem 1.3rem;
+    font-size: .9rem;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: opacity .15s, transform .1s;
+}
+.btn-misprod:hover { opacity: .85; }
+.btn-misprod:active { transform: scale(.97); }
+.btn-misprod:disabled { opacity: .45; cursor: not-allowed; }
+
 /* ─── Sourcing modal ─────────────────────────────────── */
 .sourcing-dropzone {
     border: 2px dashed var(--border);

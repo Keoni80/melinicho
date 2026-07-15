@@ -1,5 +1,6 @@
 import logging
 import os
+import threading
 import time
 import requests
 
@@ -9,6 +10,7 @@ BASE_URL = "https://api.mercadolibre.com"
 _ENV_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
 
 _access_token = None
+_refresh_lock = threading.Lock()
 
 
 def _load_env():
@@ -27,6 +29,17 @@ _load_env()
 
 
 def _refresh_token():
+    global _access_token
+    token_before = _access_token
+    with _refresh_lock:
+        # El refresh token es de un solo uso: si otro thread renovó mientras
+        # esperábamos el lock, reusar su token en vez de quemar el refresh nuevo.
+        if _access_token != token_before:
+            return True
+        return _refresh_token_locked()
+
+
+def _refresh_token_locked():
     global _access_token
     client_id     = os.environ.get("MELI_CLIENT_ID")
     client_secret = os.environ.get("MELI_CLIENT_SECRET")
@@ -411,6 +424,7 @@ def fetch_orders_total(user_id, date_from, date_to):
     total_amount = 0.0
     order_count = 0
     offset = 0
+    retries_429 = 0
     while True:
         r = _get(f"{BASE_URL}/orders/search", params={
             "seller": user_id,
@@ -419,9 +433,14 @@ def fetch_orders_total(user_id, date_from, date_to):
             "limit": 50,
             "offset": offset,
         }, timeout=15)
+        if r.status_code == 429 and retries_429 < 6:
+            retries_429 += 1
+            time.sleep(1.5 * retries_429)
+            continue
         if not r.ok:
             log.warning("orders/search failed: %s %s", r.status_code, r.text[:200])
             break
+        retries_429 = 0
         data = r.json()
         results = data.get("results", [])
         if not results:
@@ -476,7 +495,8 @@ def get_my_store_items():
     if not all_ids:
         return [], None
 
-    attrs = "id,title,price,sold_quantity,available_quantity,status,category_id,thumbnail,permalink"
+    attrs = ("id,title,price,sold_quantity,available_quantity,status,category_id,"
+             "thumbnail,permalink,catalog_product_id,inventory_id,shipping")
     items = []
     for i in range(0, len(all_ids), 20):
         batch = all_ids[i:i+20]
@@ -502,11 +522,180 @@ def get_my_store_items():
                         "thumbnail":          (b.get("thumbnail") or "").replace("http://", "https://"),
                         "permalink":          b.get("permalink", ""),
                         "revenue":            round(price * sold),
+                        "catalog_product_id": b.get("catalog_product_id") or "",
+                        "inventory_id":       b.get("inventory_id") or "",
+                        "logistic_type":      (b.get("shipping") or {}).get("logistic_type", ""),
                     })
         time.sleep(0.15)
 
     items.sort(key=lambda x: -x["revenue"])
     return items, None
+
+
+def fetch_sales_by_item(user_id, date_from, date_to):
+    """Returns {item_id: {"units": int, "revenue": float}} for paid orders in range."""
+    sales = {}
+    offset = 0
+    retries_429 = 0
+    while True:
+        r = _get(f"{BASE_URL}/orders/search", params={
+            "seller": user_id,
+            "order.date_created.from": date_from,
+            "order.date_created.to": date_to,
+            "limit": 50,
+            "offset": offset,
+        }, timeout=15)
+        if r.status_code == 429 and retries_429 < 6:
+            retries_429 += 1
+            time.sleep(1.5 * retries_429)
+            continue
+        if not r.ok:
+            log.warning("orders/search failed: %s %s", r.status_code, r.text[:200])
+            break
+        retries_429 = 0
+        data = r.json()
+        results = data.get("results", [])
+        if not results:
+            break
+        for order in results:
+            if order.get("status", "") not in ("paid", "partially_refunded"):
+                continue
+            for oi in order.get("order_items", []):
+                item_id = (oi.get("item") or {}).get("id")
+                if not item_id:
+                    continue
+                qty = int(oi.get("quantity", 0) or 0)
+                unit_price = float(oi.get("unit_price", 0) or 0)
+                s = sales.setdefault(item_id, {"units": 0, "revenue": 0.0})
+                s["units"] += qty
+                s["revenue"] += qty * unit_price
+        total = data.get("paging", {}).get("total", 0)
+        offset += len(results)
+        if offset >= total:
+            break
+        time.sleep(0.05)
+    for s in sales.values():
+        s["revenue"] = round(s["revenue"])
+    return sales
+
+
+def get_items_prices(item_ids, max_workers=8):
+    """Fetch current prices (with active promotions) via /items/{id}/prices.
+
+    El multiget de /items no trae promociones (sale_price viene null aun con
+    promo activa), por eso se consulta por item, en paralelo.
+    Returns {item_id: {"standard": float, "deal": float|None, "deal_end": str|None}}.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    def fetch(item_id):
+        try:
+            r = _get(f"{BASE_URL}/items/{item_id}/prices", timeout=10)
+            if not r.ok:
+                return item_id, None
+            out = {"standard": None, "deal": None, "deal_end": None}
+            for p in r.json().get("prices", []):
+                if p.get("type") == "standard":
+                    out["standard"] = p.get("amount")
+                elif p.get("type") == "promotion":
+                    # puede haber más de una promo: quedarse con la más barata
+                    if out["deal"] is None or (p.get("amount") or 0) < out["deal"]:
+                        out["deal"] = p.get("amount")
+                        out["deal_end"] = (p.get("conditions") or {}).get("end_time")
+            return item_id, out
+        except Exception as e:
+            log.warning("prices failed for %s: %s", item_id, e)
+            return item_id, None
+
+    prices = {}
+    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+        for item_id, data in ex.map(fetch, item_ids):
+            if data:
+                prices[item_id] = data
+    return prices
+
+
+def get_items_catalog_ids(item_ids):
+    """Returns the set of catalog_product_ids of the given own items."""
+    out = set()
+    for i in range(0, len(item_ids), 20):
+        r = _get(
+            f"{BASE_URL}/items",
+            params={"ids": ",".join(item_ids[i:i+20]), "attributes": "id,catalog_product_id"},
+            timeout=15,
+        )
+        if r.ok:
+            for entry in r.json():
+                cid = (entry.get("body") or {}).get("catalog_product_id")
+                if cid:
+                    out.add(cid)
+    return out
+
+
+def get_fulfillment_stock(inventory_id):
+    """Available stock at MeLi Full warehouse, or None if unavailable."""
+    if not inventory_id:
+        return None
+    try:
+        r = _get(f"{BASE_URL}/inventories/{inventory_id}/stock/fulfillment", timeout=10)
+        if r.ok:
+            return r.json().get("available_quantity")
+        log.warning("fulfillment stock failed for %s: %s", inventory_id, r.status_code)
+    except Exception as e:
+        log.warning("fulfillment stock failed for %s: %s", inventory_id, e)
+    return None
+
+
+def derive_keyword(title):
+    """Keyword de búsqueda por defecto: primeros 3 tokens significativos del título."""
+    import re
+    words = []
+    for w in re.split(r"[\s/,()\-]+", title):
+        w = w.strip(".").lower()
+        if not w or w in _ES_STOP or len(w) < 3:
+            continue
+        words.append(w)
+        if len(words) == 3:
+            break
+    return " ".join(words)
+
+
+def get_item_position(item_ids, seller_id, keyword, catalog_ids=None):
+    """Busca la keyword en el listado real de MeLi (vía Apify) y ubica la publicación propia.
+
+    Los resultados de catálogo aparecen con el catalog_product_id (URL /p/MLA...) en vez
+    del id de la publicación, por eso también se matchea contra catalog_ids.
+    Returns (position 1-based | None, total_scanned, competitors): competitors son los
+    primeros 15 resultados del listado, con la fila propia marcada is_mine.
+    """
+    results = _search_apify(keyword.lower(), max_results=60)
+    if not results:
+        return None, 0, []
+
+    norm_ids = {i.replace("-", "") for i in item_ids if i}
+    norm_ids |= {c.replace("-", "") for c in (catalog_ids or []) if c}
+    position = None
+    competitors = []
+    for idx, it in enumerate(results, 1):
+        rid = str(it.get("id") or "").replace("-", "")
+        permalink = (it.get("permalink") or "").replace("-", "")
+        is_mine = bool(
+            rid in norm_ids
+            or any(nid in permalink for nid in norm_ids)
+            or (seller_id and str(it.get("seller_id") or "") == str(seller_id))
+        )
+        if is_mine and position is None:
+            position = idx
+        if idx <= 15:
+            competitors.append({
+                "pos": idx,
+                "title": it.get("title", ""),
+                "price": it.get("price", 0),
+                "seller_name": it.get("seller_name", ""),
+                "free_shipping": bool(it.get("free_shipping")),
+                "is_mine": is_mine,
+            })
+    return position, len(results), competitors
 
 
 def search_alibaba(query, limit=20):
