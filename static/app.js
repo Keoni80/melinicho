@@ -10,6 +10,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadCategories();
     loadHistory();
     loadSalesSummary();
+    initSidebar();
 
     document.getElementById('search-btn').addEventListener('click', performSearch);
     document.getElementById('keyword-input').addEventListener('keydown', e => {
@@ -512,6 +513,49 @@ function closeModal() {
     document.body.style.overflow = '';
 }
 
+// ─── Sidebar / menú lateral ──────────────────────────────
+
+function initSidebar() {
+    const shell    = document.querySelector('.app-shell');
+    const sidebar  = document.getElementById('sidebar');
+    const backdrop = document.getElementById('sidebar-backdrop');
+    const hamburger = document.getElementById('hamburger');
+    const toggle   = document.getElementById('sidebar-toggle');
+
+    const openSidebar  = () => { sidebar.classList.add('open'); backdrop.classList.add('show'); };
+    const closeSidebar = () => { sidebar.classList.remove('open'); backdrop.classList.remove('show'); };
+
+    // Restaura el estado colapsado (solo aplica en escritorio vía CSS).
+    try { if (localStorage.getItem('sidebarCollapsed') === '1') shell.classList.add('collapsed'); } catch (e) {}
+
+    // Botón dentro del sidebar (escritorio): colapsa/expande el menú.
+    toggle.addEventListener('click', () => {
+        shell.classList.toggle('collapsed');
+        try { localStorage.setItem('sidebarCollapsed', shell.classList.contains('collapsed') ? '1' : '0'); } catch (e) {}
+    });
+
+    // Hamburguesa de la topbar (móvil): abre el menú por encima.
+    hamburger.addEventListener('click', openSidebar);
+    backdrop.addEventListener('click', closeSidebar);
+
+    // Marca el ítem activo y, en móvil, cierra el menú al elegir una sección.
+    document.querySelectorAll('.nav-item').forEach(item => {
+        item.addEventListener('click', () => {
+            document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+            item.classList.add('active');
+            closeSidebar();
+        });
+    });
+
+    // "Buscar nicho" vuelve al inicio: cierra modales, sube y enfoca la búsqueda.
+    document.getElementById('nav-home').addEventListener('click', () => {
+        document.querySelectorAll('.modal-overlay').forEach(m => m.style.display = 'none');
+        document.body.style.overflow = '';
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        document.getElementById('keyword-input').focus();
+    });
+}
+
 // ─── Discover ────────────────────────────────────────────
 
 async function discoverOpportunities() {
@@ -523,8 +567,9 @@ async function discoverOpportunities() {
 
     showError(null);
     const btn = document.getElementById('discover-btn');
+    const btnLabel = btn.querySelector('.nav-txt') || btn;
     btn.disabled = true;
-    btn.textContent = '⏳ Analizando subcategorías...';
+    btnLabel.textContent = '⏳ Analizando...';
 
     try {
         const resp = await fetch('/api/discover', {
@@ -549,7 +594,7 @@ async function discoverOpportunities() {
         showError('Error de conexión al descubrir oportunidades.');
     } finally {
         btn.disabled = false;
-        btn.textContent = '🔍 Descubrir oportunidades';
+        btnLabel.textContent = 'Descubrir oportunidades';
     }
 }
 

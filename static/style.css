@@ -883,3 +883,199 @@ main {
 .drop-zone-icon { font-size: 2rem; line-height: 1; }
 .drop-zone-text { color: var(--muted); font-size: .9rem; margin: 0; }
 .drop-zone-or   { color: #555; font-size: .78rem; margin: .15rem 0; }
+
+/* ─── Layout con menú lateral ────────────────────────── */
+.app-shell { display: flex; min-height: 100vh; }
+
+.sidebar {
+    position: fixed;
+    top: 0; left: 0; bottom: 0;
+    width: 234px;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    padding: 1.1rem .8rem 1rem;
+    z-index: 90;
+    overflow-y: auto;
+    transition: transform .25s ease, width .25s ease;
+}
+
+.sidebar-logo {
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+    font-size: 1.4rem;
+    font-weight: 300;
+    color: var(--text);
+    letter-spacing: -.5px;
+    padding: .2rem .5rem 1.1rem;
+    white-space: nowrap;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 1rem;
+}
+.sidebar-logo strong { color: var(--accent); font-weight: 800; }
+.logo-mark { font-size: 1.4rem; line-height: 1; }
+
+.sidebar-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 34px;
+    margin: 0 .5rem 1.1rem;
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    color: var(--text);
+    font-size: 1.1rem;
+    line-height: 1;
+    cursor: pointer;
+    transition: color .2s, border-color .2s;
+}
+.sidebar-toggle:hover { color: var(--accent); border-color: var(--accent); }
+
+.sidebar-nav { display: flex; flex-direction: column; gap: 1.1rem; flex: 1; }
+
+.nav-group { display: flex; flex-direction: column; gap: .25rem; }
+.nav-group-title {
+    font-size: .64rem;
+    text-transform: uppercase;
+    letter-spacing: .9px;
+    color: var(--muted);
+    padding: 0 .5rem .25rem;
+}
+
+.nav-item {
+    display: flex;
+    align-items: center;
+    gap: .7rem;
+    width: 100%;
+    background: none;
+    border: none;
+    border-left: 3px solid transparent;
+    border-radius: var(--r);
+    padding: .55rem .7rem;
+    color: var(--text);
+    font-size: .9rem;
+    font-weight: 600;
+    text-align: left;
+    cursor: pointer;
+    transition: background .15s, border-color .15s;
+    font-family: inherit;
+}
+.nav-item:hover { background: rgba(255,255,255,.04); }
+.nav-item.active {
+    background: var(--accent-dim);
+    border-left-color: var(--accent);
+}
+.nav-item:disabled { opacity: .5; cursor: not-allowed; }
+
+.nav-ico {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px; height: 30px;
+    flex-shrink: 0;
+    border-radius: 7px;
+    font-size: 1rem;
+    background: var(--surface2);
+}
+.nav-txt { flex: 1; line-height: 1.2; }
+
+/* Acento de color por feature (coincide con los gradientes originales) */
+.nav-item--home     .nav-ico { background: linear-gradient(135deg,#0F3460,#1A5276); }
+.nav-item--discover .nav-ico { background: linear-gradient(135deg,#0F3460,#1A5276); }
+.nav-item--nicho    .nav-ico { background: linear-gradient(135deg,#AD1457,#EC407A); }
+.nav-item--rt       .nav-ico { background: linear-gradient(135deg,#00897B,#00BCD4); }
+.nav-item--nubi     .nav-ico { background: linear-gradient(135deg,#E65100,#FF9800); }
+.nav-item--comp     .nav-ico { background: linear-gradient(135deg,#B71C1C,#E53935); }
+.nav-item--buscomp  .nav-ico { background: linear-gradient(135deg,#1565C0,#42A5F5); }
+.nav-item--store    .nav-ico { background: linear-gradient(135deg,#1B5E20,#43A047); }
+.nav-item--misprod  .nav-ico { background: linear-gradient(135deg,#006064,#00ACC1); }
+.nav-item--sourcing .nav-ico { background: linear-gradient(135deg,#4A148C,#7B1FA2); }
+
+.sidebar-logout {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    margin-top: 1rem;
+    padding: .6rem .7rem;
+    color: var(--muted);
+    text-decoration: none;
+    font-size: .85rem;
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    transition: color .2s, border-color .2s;
+}
+.sidebar-logout:hover { color: var(--text); border-color: var(--muted); }
+
+.main-area {
+    flex: 1;
+    min-width: 0;
+    margin-left: 234px;
+    transition: margin-left .25s ease;
+}
+
+.topbar {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: .85rem 1.5rem;
+    background: var(--surface);
+    border-bottom: 2px solid var(--accent);
+}
+.topbar .tagline { flex: 1; margin: 0; }
+
+.hamburger {
+    display: none;
+    align-items: center;
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-size: 1.15rem;
+    line-height: 1;
+    padding: .35rem .6rem;
+    border-radius: var(--r);
+    cursor: pointer;
+    transition: color .2s, border-color .2s;
+}
+.hamburger:hover { color: var(--accent); border-color: var(--accent); }
+
+.sidebar-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,.55);
+    z-index: 89;
+}
+
+/* ─── Sidebar colapsado (escritorio) ─────────────────── */
+@media (min-width: 881px) {
+    .app-shell.collapsed .sidebar { width: 68px; padding-left: .55rem; padding-right: .55rem; }
+    .app-shell.collapsed .main-area { margin-left: 68px; }
+    .app-shell.collapsed .nav-txt,
+    .app-shell.collapsed .nav-group-title,
+    .app-shell.collapsed .logo-text,
+    .app-shell.collapsed .logout-txt { display: none; }
+    .app-shell.collapsed .nav-item,
+    .app-shell.collapsed .sidebar-logo,
+    .app-shell.collapsed .sidebar-logout { justify-content: center; }
+    .app-shell.collapsed .nav-item { padding-left: 0; padding-right: 0; border-left-color: transparent; }
+    .app-shell.collapsed .nav-item.active { background: var(--accent-dim); }
+    .app-shell.collapsed .sidebar-logo { gap: 0; }
+    .app-shell.collapsed .sidebar-toggle { margin-left: auto; margin-right: auto; }
+}
+
+/* ─── Responsive: sidebar colapsable ─────────────────── */
+@media (max-width: 880px) {
+    .sidebar {
+        transform: translateX(-100%);
+        box-shadow: 2px 0 18px rgba(0,0,0,.4);
+    }
+    .sidebar.open { transform: translateX(0); }
+    .sidebar-backdrop.show { display: block; }
+    .main-area { margin-left: 0; }
+    .hamburger { display: inline-flex; align-items: center; }
+    .sidebar-toggle { display: none; }
+}
