@@ -525,8 +525,9 @@ function initSidebar() {
     const openSidebar  = () => { sidebar.classList.add('open'); backdrop.classList.add('show'); };
     const closeSidebar = () => { sidebar.classList.remove('open'); backdrop.classList.remove('show'); };
 
-    // Restaura el estado colapsado (solo aplica en escritorio vía CSS).
-    try { if (localStorage.getItem('sidebarCollapsed') === '1') shell.classList.add('collapsed'); } catch (e) {}
+    // Por defecto el menú arranca contraído (clase en el HTML); solo se
+    // expande si el usuario lo dejó expandido antes. (Solo aplica en escritorio vía CSS.)
+    try { if (localStorage.getItem('sidebarCollapsed') === '0') shell.classList.remove('collapsed'); } catch (e) {}
 
     // Botón dentro del sidebar (escritorio): colapsa/expande el menú.
     toggle.addEventListener('click', () => {
