@@ -188,7 +188,9 @@ def _search_apify(query="", category_id="", max_results=100):
         except (ValueError, TypeError):
             price = 0
         envio = str(r.get("Envio", "")).lower()
-        url = r.get("zdireccion", "")
+        # El actor de Apify renombró este campo de "zdireccion" a "zProductoLink"
+        # en algún momento; se mantiene el nombre viejo como fallback por si vuelve a cambiar.
+        url = r.get("zProductoLink") or r.get("zdireccion", "")
 
         # Apify returns two URL types:
         # 1. articulo.mercadolibre.com.ar/MLA-1234567890-... → individual listing ID (works with /visits/items)
