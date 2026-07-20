@@ -156,6 +156,15 @@ Needs `NODE_EXTRA_CA_CERTS` env var set if machine has AVG antivirus (SSL interc
 
 ---
 
+## Features added 2026-07-20
+
+### 🔥 Nichos populares + cascada de subcategorías (búsqueda principal)
+- **Chips de sugerencias** debajo del search-row (`#suggestions-row`): `GET /api/suggestions` rankea búsquedas previas de la tabla `searches` (frecuencia ×10 + bonus por poca competencia según `unique_sellers` del `niche_stats`); completa hasta 8 con `FALLBACK_SUGGESTIONS` curadas (app.py). Click en chip → keyword search. Chip con borde accent (`chip-hot`) = competencia "Baja".
+- **Cascada de subcategorías**: al elegir categoría con hijas aparece otro select al lado (`#subcat-slots`, hasta 4-5 niveles MeLi). `GET /api/categories/<id>/children` envuelve `get_subcategories()`. La búsqueda usa `effectiveCategoryId()` (el select más profundo con valor). Cada opción muestra `total_items_in_this_category` abreviado. Cambiar un nivel superior destruye los selects más profundos.
+- **Historial**: `performSearch(overrideCategoryId)` — el click en historial pasa el `category_id` guardado (puede ser subcategoría que no existe en los selects visibles).
+
+---
+
 ## Features added 2026-07-15
 
 ### 📦 mis productos (monitoreo de operación propia)

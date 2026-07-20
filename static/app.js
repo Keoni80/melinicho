@@ -8,6 +8,7 @@ let nubiPendingFile = null;
 
 document.addEventListener('DOMContentLoaded', () => {
     loadCategories();
+    loadSuggestions();
     loadHistory();
     loadSalesSummary();
     initSidebar();
@@ -274,14 +275,97 @@ async function loadCategories() {
             opt.textContent = c.name;
             sel.appendChild(opt);
         });
+        sel.addEventListener('change', () => onCategoryChange(sel));
+    } catch (_) {}
+}
+
+// Cascada de subcategorías: al elegir una categoría con hijas aparece otro
+// select al lado; se puede seguir bajando niveles. La búsqueda usa el más profundo.
+async function onCategoryChange(sel) {
+    removeDeeperSelects(sel);
+    const id = sel.value;
+    if (!id) return;
+    try {
+        const resp = await fetch(`/api/categories/${id}/children`);
+        if (!resp.ok) return;
+        const children = await resp.json();
+        if (!children.length) return;
+        const sub = document.createElement('select');
+        sub.className = 'category-select subcat-select';
+        const all = document.createElement('option');
+        all.value = '';
+        all.textContent = 'Todas las subcategorías';
+        sub.appendChild(all);
+        children.forEach(c => {
+            const opt = document.createElement('option');
+            opt.value = c.id;
+            const n = c.total_items_in_this_category;
+            opt.textContent = n ? `${c.name} (${fmtCompact(n)})` : c.name;
+            sub.appendChild(opt);
+        });
+        sub.addEventListener('change', () => onCategoryChange(sub));
+        document.getElementById('subcat-slots').appendChild(sub);
+    } catch (_) {}
+}
+
+function removeDeeperSelects(sel) {
+    const slots = document.getElementById('subcat-slots');
+    if (sel.id === 'category-select') { slots.innerHTML = ''; return; }
+    while (sel.nextSibling) slots.removeChild(sel.nextSibling);
+}
+
+// Categoría efectiva = el select más profundo con valor elegido
+function effectiveCategoryId() {
+    const selects = [document.getElementById('category-select'),
+                     ...document.querySelectorAll('#subcat-slots .subcat-select')];
+    let id = '';
+    selects.forEach(s => { if (s.value) id = s.value; });
+    return id;
+}
+
+function fmtCompact(n) {
+    if (n >= 1e6) return (n / 1e6).toFixed(1).replace('.0', '') + 'M';
+    if (n >= 1e3) return (n / 1e3).toFixed(1).replace('.0', '') + 'k';
+    return String(n);
+}
+
+// ─── Sugerencias de nichos populares ──────────────────────
+
+async function loadSuggestions() {
+    try {
+        const resp = await fetch('/api/suggestions');
+        if (!resp.ok) return;
+        const sugs = await resp.json();
+        if (!sugs.length) return;
+        const chips = document.getElementById('suggestions-chips');
+        chips.innerHTML = '';
+        sugs.forEach(s => {
+            const chip = document.createElement('button');
+            chip.className = 'suggestion-chip';
+            chip.textContent = s.query;
+            if (s.competition_level === 'Baja') chip.classList.add('chip-hot');
+            chip.title = s.competition_level
+                ? `Competencia: ${s.competition_level}` : 'Nicho sugerido';
+            chip.addEventListener('click', () => {
+                document.getElementById('keyword-input').value = s.query;
+                document.getElementById('category-select').value = '';
+                removeDeeperSelects(document.getElementById('category-select'));
+                performSearch();
+            });
+            chips.appendChild(chip);
+        });
+        document.getElementById('suggestions-row').style.display = 'flex';
     } catch (_) {}
 }
 
 // ─── Search ───────────────────────────────────────────────
 
-async function performSearch() {
+async function performSearch(overrideCategoryId) {
     const keyword    = document.getElementById('keyword-input').value.trim();
-    const categoryId = document.getElementById('category-select').value;
+    // Cuando viene del historial se pasa el category_id guardado (puede ser una
+    // subcategoría que no existe en los selects); si no, el select más profundo.
+    const categoryId = (typeof overrideCategoryId === 'string')
+        ? overrideCategoryId : effectiveCategoryId();
 
     if (!keyword && !categoryId) {
         showError('Ingresá una keyword o seleccioná una categoría para buscar.');
@@ -449,9 +533,9 @@ async function loadHistory() {
                 <div class="history-meta">${h.results_count} resultados · ${fmtDate(h.timestamp)}</div>
             `;
             el.addEventListener('click', () => {
-                document.getElementById('keyword-input').value = h.query || '';
-                if (h.category_id) document.getElementById('category-select').value = h.category_id;
-                performSearch();
+                const isCatOnly = h.category_id && h.query === h.category_id;
+                document.getElementById('keyword-input').value = isCatOnly ? '' : (h.query || '');
+                performSearch(h.category_id || '');
             });
             container.appendChild(el);
         });

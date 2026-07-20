@@ -166,6 +166,59 @@ def categories():
     return jsonify(get_categories())
 
 
+@app.route("/api/categories/<category_id>/children")
+@login_required
+def category_children(category_id):
+    return jsonify(get_subcategories(category_id))
+
+
+# Sugerencias curadas para cuando la DB todavía no tiene historial propio
+FALLBACK_SUGGESTIONS = [
+    "detector fugas de gas", "microscopio usb", "controlador temperatura stc-1000",
+    "sensor monoxido de carbono", "protector de tension", "masajeador cervical",
+    "regulador solar", "multimetro digital",
+]
+
+
+@app.route("/api/suggestions")
+@login_required
+def suggestions():
+    # Nichos populares: búsquedas previas con resultados, rankeadas por
+    # frecuencia de uso y baja competencia (unique_sellers del niche_stats)
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT query, MAX(category_id) AS category_id, COUNT(*) AS veces,"
+            " MAX(timestamp) AS last_ts, MAX(niche_stats) AS niche_stats"
+            " FROM searches"
+            " WHERE results_count > 0 AND query != '' AND query != IFNULL(category_id, '')"
+            " GROUP BY LOWER(query) ORDER BY last_ts DESC LIMIT 60"
+        ).fetchall()
+
+    scored = []
+    for r in rows:
+        try:
+            stats = json.loads(r["niche_stats"] or "{}")
+        except ValueError:
+            stats = {}
+        sellers = stats.get("unique_sellers") or 0
+        score = r["veces"] * 10 + max(0, 40 - sellers)
+        scored.append({
+            "query": r["query"],
+            "competition_level": stats.get("competition_level", ""),
+            "score": score,
+        })
+    scored.sort(key=lambda s: s["score"], reverse=True)
+    out = scored[:8]
+
+    for q in FALLBACK_SUGGESTIONS:
+        if len(out) >= 8:
+            break
+        if not any(s["query"].lower() == q for s in out):
+            out.append({"query": q, "competition_level": "", "score": 0})
+    return jsonify(out)
+
+
 @app.route("/api/search", methods=["POST"])
 @login_required
 def search():
