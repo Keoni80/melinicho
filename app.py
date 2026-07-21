@@ -1568,6 +1568,28 @@ def potencia_ventas_page():
     return render_template("potencia_ventas.html")
 
 
+@app.route("/api/debug-stock")
+@login_required
+def debug_stock():
+    """TEMPORAL: inspeccionar stock por ubicación (user-products/{id}/stock) de un item."""
+    from meli_api import _get, BASE_URL
+    item_id = request.args.get("item_id", "")
+    if not item_id:
+        return jsonify({"error": "Falta ?item_id=MLA..."}), 400
+    r = _get(f"{BASE_URL}/items/{item_id}", timeout=15)
+    item = r.json() if r.ok else {"error": r.status_code, "detail": r.text[:300]}
+    out = {"item": {
+        "id": item.get("id"), "user_product_id": item.get("user_product_id"),
+        "inventory_id": item.get("inventory_id"), "available_quantity": item.get("available_quantity"),
+        "logistic_type": (item.get("shipping") or {}).get("logistic_type"),
+    }}
+    up_id = item.get("user_product_id")
+    if up_id:
+        r2 = _get(f"{BASE_URL}/user-products/{up_id}/stock", timeout=15)
+        out["user_product_stock"] = r2.json() if r2.ok else {"error": r2.status_code, "detail": r2.text[:300]}
+    return jsonify(out)
+
+
 @app.route("/api/mis-productos")
 @login_required
 def mis_productos_data():
