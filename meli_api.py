@@ -648,6 +648,17 @@ def get_fulfillment_stock(inventory_id):
     return None
 
 
+def get_item_raw(item_id):
+    """DEBUG: devuelve el JSON completo (sin filtrar atributos) de una publicación."""
+    try:
+        r = _get(f"{BASE_URL}/items/{item_id}", timeout=15)
+        if r.ok:
+            return r.json()
+        return {"error": r.status_code, "detail": r.text[:500]}
+    except Exception as e:
+        return {"error": str(e)}
+
+
 def derive_keyword(title):
     """Keyword de búsqueda por defecto: primeros 3 tokens significativos del título."""
     import re

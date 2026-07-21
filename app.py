@@ -18,7 +18,7 @@ from functools import wraps
 from analyzer import analyze_niche
 from meli_api import (
     derive_keyword, fetch_orders_total, fetch_sales_by_item, get_categories,
-    get_fulfillment_stock, get_item_position, get_items_catalog_ids, get_items_prices,
+    get_fulfillment_stock, get_item_position, get_item_raw, get_items_catalog_ids, get_items_prices,
     get_my_store_items, get_my_user_id, get_subcategories, sample_subcategory, search_meli,
 )
 
@@ -1562,6 +1562,16 @@ def mis_productos_page():
 @login_required
 def potencia_ventas_page():
     return render_template("potencia_ventas.html")
+
+
+@app.route("/api/debug-item")
+@login_required
+def debug_item():
+    """TEMPORAL: dump crudo de una publicación para encontrar el campo de IVA/impuestos nacionales."""
+    item_id = request.args.get("id", "")
+    if not item_id:
+        return jsonify({"error": "Falta ?id=MLA..."}), 400
+    return jsonify(get_item_raw(item_id))
 
 
 @app.route("/api/mis-productos")
