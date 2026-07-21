@@ -1568,24 +1568,6 @@ def potencia_ventas_page():
     return render_template("potencia_ventas.html")
 
 
-@app.route("/api/migrate-costo-usd", methods=["POST"])
-@login_required
-def migrate_costo_usd():
-    """TEMPORAL: mueve landed_cost_ars mal cargado (en realidad costo USD) a costo_usd."""
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.row_factory = sqlite3.Row
-        rows = conn.execute(
-            "SELECT id, landed_cost_ars FROM product_config "
-            "WHERE landed_cost_ars IS NOT NULL AND landed_cost_ars < 500"
-        ).fetchall()
-        for r in rows:
-            conn.execute(
-                "UPDATE product_config SET costo_usd = ?, landed_cost_ars = NULL WHERE id = ?",
-                (r["landed_cost_ars"], r["id"]),
-            )
-    return jsonify({"migrated": len(rows), "ids": [r["id"] for r in rows]})
-
-
 @app.route("/api/mis-productos")
 @login_required
 def mis_productos_data():
