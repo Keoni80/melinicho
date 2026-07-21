@@ -498,7 +498,7 @@ def get_my_store_items():
         return [], None
 
     attrs = ("id,title,price,sold_quantity,available_quantity,status,category_id,"
-             "thumbnail,permalink,catalog_product_id,inventory_id,shipping,attributes")
+             "thumbnail,permalink,catalog_product_id,inventory_id,shipping,attributes,user_product_id")
     items = []
     for i in range(0, len(all_ids), 20):
         batch = all_ids[i:i+20]
@@ -528,6 +528,7 @@ def get_my_store_items():
                         "inventory_id":       b.get("inventory_id") or "",
                         "logistic_type":      (b.get("shipping") or {}).get("logistic_type", ""),
                         "iva_pct":            _parse_iva_pct(b.get("attributes") or []),
+                        "user_product_id":    b.get("user_product_id") or "",
                     })
         time.sleep(0.15)
 
@@ -658,6 +659,30 @@ def get_fulfillment_stock(inventory_id):
     except Exception as e:
         log.warning("fulfillment stock failed for %s: %s", inventory_id, e)
     return None
+
+
+def get_user_product_stock(user_product_id):
+    """Stock por ubicación de un User Product (Multi-Origin Stock).
+
+    Una publicación Full puede tener, a la vez, unidades en el depósito propio
+    del vendedor (no enviadas a Full) y en el centro Full — /items/{id} solo
+    expone el total visible para venta, no el desglose. Devuelve
+    {"deposito": int, "full": int} o None si el vendedor no usa este modelo.
+    """
+    if not user_product_id:
+        return None
+    try:
+        r = _get(f"{BASE_URL}/user-products/{user_product_id}/stock", timeout=10)
+        if not r.ok:
+            log.warning("user-product stock failed for %s: %s", user_product_id, r.status_code)
+            return None
+        locations = r.json().get("locations", [])
+        full = sum(l.get("quantity", 0) or 0 for l in locations if l.get("type") == "meli_facility")
+        deposito = sum(l.get("quantity", 0) or 0 for l in locations if l.get("type") != "meli_facility")
+        return {"deposito": deposito, "full": full}
+    except Exception as e:
+        log.warning("user-product stock failed for %s: %s", user_product_id, e)
+        return None
 
 
 def derive_keyword(title):

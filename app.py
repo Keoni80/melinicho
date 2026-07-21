@@ -19,7 +19,7 @@ from analyzer import analyze_niche
 from meli_api import (
     derive_keyword, fetch_orders_total, fetch_sales_by_item, get_categories,
     get_fulfillment_stock, get_item_position, get_items_catalog_ids, get_items_prices,
-    get_my_store_items, get_my_user_id, get_subcategories, sample_subcategory, search_meli,
+    get_my_store_items, get_my_user_id, get_subcategories, get_user_product_stock, sample_subcategory, search_meli,
 )
 
 app = Flask(__name__)
@@ -1490,6 +1490,34 @@ def _title_key(title):
     return " ".join(tokens)
 
 
+def _compute_group_stock(its, full_stock, up_stock):
+    """Stock depósito propio / Full de un grupo de publicaciones.
+
+    Prioriza /user-products/{id}/stock (Multi-Origin Stock) cuando está
+    disponible: una pub Full puede tener unidades sin enviar en el depósito
+    propio que available_quantity no refleja (solo muestra el total visible
+    para la venta). Fallback al esquema viejo (available_quantity +
+    logistic_type) para items sin user_product_id o sin datos de Multi-Origin.
+    """
+    up_ids = {i["user_product_id"] for i in its if i.get("user_product_id")}
+    resolved = {up for up in up_ids if up_stock.get(up) is not None}
+
+    stock_deposito = sum(up_stock[up]["deposito"] for up in resolved)
+    stock_full = sum(up_stock[up]["full"] for up in resolved)
+
+    legacy = [i for i in its if i.get("user_product_id") not in resolved]
+    stock_deposito += sum(i["available_quantity"] for i in legacy if i["logistic_type"] != "fulfillment")
+    invs = {i["inventory_id"] for i in legacy if i["logistic_type"] == "fulfillment" and i["inventory_id"]}
+    for inv in invs:
+        if full_stock.get(inv) is not None:
+            stock_full += full_stock[inv]
+        else:  # fallback: available_quantity de la pub Full de ese inventario
+            stock_full += max((i["available_quantity"] for i in legacy if i["inventory_id"] == inv), default=0)
+    stock_full += sum(i["available_quantity"] for i in legacy
+                      if i["logistic_type"] == "fulfillment" and not i["inventory_id"])
+    return stock_deposito, stock_full
+
+
 def _group_store_items(items):
     """Agrupa publicaciones del mismo producto: comparten inventory_id,
     catalog_product_id o título normalizado (una pub Full + una propia = una fila)."""
@@ -1568,28 +1596,6 @@ def potencia_ventas_page():
     return render_template("potencia_ventas.html")
 
 
-@app.route("/api/debug-stock")
-@login_required
-def debug_stock():
-    """TEMPORAL: inspeccionar stock por ubicación (user-products/{id}/stock) de un item."""
-    from meli_api import _get, BASE_URL
-    item_id = request.args.get("item_id", "")
-    if not item_id:
-        return jsonify({"error": "Falta ?item_id=MLA..."}), 400
-    r = _get(f"{BASE_URL}/items/{item_id}", timeout=15)
-    item = r.json() if r.ok else {"error": r.status_code, "detail": r.text[:300]}
-    out = {"item": {
-        "id": item.get("id"), "user_product_id": item.get("user_product_id"),
-        "inventory_id": item.get("inventory_id"), "available_quantity": item.get("available_quantity"),
-        "logistic_type": (item.get("shipping") or {}).get("logistic_type"),
-    }}
-    up_id = item.get("user_product_id")
-    if up_id:
-        r2 = _get(f"{BASE_URL}/user-products/{up_id}/stock", timeout=15)
-        out["user_product_stock"] = r2.json() if r2.ok else {"error": r2.status_code, "detail": r2.text[:300]}
-    return jsonify(out)
-
-
 @app.route("/api/mis-productos")
 @login_required
 def mis_productos_data():
@@ -1616,6 +1622,10 @@ def mis_productos_data():
     full_invs = {i["inventory_id"] for i in items if i["logistic_type"] == "fulfillment" and i["inventory_id"]}
     full_stock = {inv: get_fulfillment_stock(inv) for inv in full_invs}
 
+    # Stock por ubicación vía Multi-Origin Stock (depósito propio + Full reales)
+    up_ids = {i["user_product_id"] for i in items if i.get("user_product_id")}
+    up_stock = {up: get_user_product_stock(up) for up in up_ids}
+
     groups = _reconcile_product_config(_group_store_items(items))
 
     products = []
@@ -1624,16 +1634,7 @@ def mis_productos_data():
         its = g["items"]
         main = max(its, key=lambda i: i.get("revenue", 0))
 
-        stock_deposito = sum(i["available_quantity"] for i in its if i["logistic_type"] != "fulfillment")
-        invs = {i["inventory_id"] for i in its if i["logistic_type"] == "fulfillment" and i["inventory_id"]}
-        stock_full = 0
-        for inv in invs:
-            if full_stock.get(inv) is not None:
-                stock_full += full_stock[inv]
-            else:  # fallback: available_quantity de la pub Full de ese inventario
-                stock_full += max((i["available_quantity"] for i in its if i["inventory_id"] == inv), default=0)
-        stock_full += sum(i["available_quantity"] for i in its
-                          if i["logistic_type"] == "fulfillment" and not i["inventory_id"])
+        stock_deposito, stock_full = _compute_group_stock(its, full_stock, up_stock)
 
         price = prices.get(main["id"], {}).get("standard") or main["price"]
         deals = [prices[i["id"]]["deal"] for i in its if prices.get(i["id"], {}).get("deal")]
@@ -1903,6 +1904,9 @@ def potencia_datos():
     full_invs = {i["inventory_id"] for i in items if i["logistic_type"] == "fulfillment" and i["inventory_id"]}
     full_stock = {inv: get_fulfillment_stock(inv) for inv in full_invs}
 
+    up_ids = {i["user_product_id"] for i in items if i.get("user_product_id")}
+    up_stock = {up: get_user_product_stock(up) for up in up_ids}
+
     groups = _reconcile_product_config(_group_store_items(items))
 
     products = []
@@ -1910,16 +1914,7 @@ def potencia_datos():
         its = g["items"]
         main = max(its, key=lambda i: i.get("revenue", 0))
 
-        stock_deposito = sum(i["available_quantity"] for i in its if i["logistic_type"] != "fulfillment")
-        invs = {i["inventory_id"] for i in its if i["logistic_type"] == "fulfillment" and i["inventory_id"]}
-        stock_full = 0
-        for inv in invs:
-            if full_stock.get(inv) is not None:
-                stock_full += full_stock[inv]
-            else:  # fallback: available_quantity de la pub Full de ese inventario
-                stock_full += max((i["available_quantity"] for i in its if i["inventory_id"] == inv), default=0)
-        stock_full += sum(i["available_quantity"] for i in its
-                          if i["logistic_type"] == "fulfillment" and not i["inventory_id"])
+        stock_deposito, stock_full = _compute_group_stock(its, full_stock, up_stock)
 
         price = prices.get(main["id"], {}).get("standard") or main["price"]
         deals = [prices[i["id"]]["deal"] for i in its if prices.get(i["id"], {}).get("deal")]
