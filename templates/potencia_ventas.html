@@ -32,6 +32,7 @@
   .btn:disabled { opacity: .45; cursor: default; }
   .btn-accent { background: var(--accent); color: #1A1A2E; }
   .btn-ai { background: linear-gradient(135deg, #283593, #5C6BC0); color: #fff; }
+  .btn-print { background: var(--accent); color: #1A1A2E; }
 
   main { max-width: 1400px; margin: 0 auto; padding: 1.5rem 1rem 4rem; }
 
@@ -95,12 +96,27 @@
   .cfg-input.saved { border-color: var(--green); }
   .landed-cell { font-size: .78rem; color: var(--muted); }
   .landed-cell strong { color: var(--text); }
+
+  @media print {
+    body { background: #fff; color: #111; }
+    header { background: #f5f5f5; border-color: #ccc; position: static; }
+    .btn, .controls, #error-box:empty { display: none; }
+    .logo strong, #strategy-box h2, #strategy-box h3, #strategy-box h4 { color: #333; }
+    .chip { background: #eee; color: #444; }
+    .chip strong { color: #111; }
+    thead th { position: static; background: #eee; color: #111; }
+    td, th { border-color: #ccc; }
+    #strategy-box, table.data { background: #fff; }
+    .cfg-input { border: none; background: transparent; color: #111; }
+    .prod-title { color: #111; }
+  }
 </style>
 </head>
 <body>
 <header>
   <div class="logo">💪 Potencia tus <strong>Ventas</strong></div>
   <div class="meta-chips" id="meta-chips"></div>
+  <button class="btn btn-print" onclick="window.print()">🖨 Imprimir / PDF</button>
   <button class="btn btn-accent" onclick="loadData()">↻ Recargar</button>
 </header>
 <main>
