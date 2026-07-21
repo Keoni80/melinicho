@@ -1558,6 +1558,12 @@ def mis_productos_page():
     return render_template("mis_productos.html")
 
 
+@app.route("/potencia-ventas")
+@login_required
+def potencia_ventas_page():
+    return render_template("potencia_ventas.html")
+
+
 @app.route("/api/mis-productos")
 @login_required
 def mis_productos_data():
@@ -1822,6 +1828,177 @@ def mis_productos_estrategia():
         mimetype="application/json",
         headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
     )
+
+
+# ---------------------------------------------------------------------------
+# Potencia tus Ventas: stock + ventas del período + meta de facturación → estrategia IA
+# ---------------------------------------------------------------------------
+
+@app.route("/api/potencia-datos")
+@login_required
+def potencia_datos():
+    from datetime import datetime, timezone, timedelta
+    import calendar
+
+    period = request.args.get("period", "30d")
+    tz_arg = timezone(timedelta(hours=-3))
+    now = datetime.now(tz_arg)
+    fmt = '%Y-%m-%dT%H:%M:%S.000-0300'
+
+    items, error = get_my_store_items()
+    if error:
+        return jsonify({"error": error}), 502
+    items = [i for i in items if i["status"] == "active"]
+
+    user_id = get_my_user_id()
+    if not user_id:
+        return jsonify({"error": "No se pudo obtener el usuario de MeLi."}), 502
+
+    month_from = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    now_str = now.strftime(fmt)
+    facturado_mes, _ = fetch_orders_total(user_id, month_from.strftime(fmt), now_str)
+    last_day = calendar.monthrange(now.year, now.month)[1]
+    dias_restantes = last_day - now.day + 1
+
+    if not items:
+        return jsonify({
+            "products": [], "period": period, "facturado_mes": facturado_mes,
+            "dias_restantes": dias_restantes, "as_of": now.strftime('%H:%M'),
+        })
+
+    date_from = month_from if period == "month" else now - timedelta(days=30)
+    sales = fetch_sales_by_item(user_id, date_from.strftime(fmt), now_str)
+    prices = get_items_prices([i["id"] for i in items])
+
+    full_invs = {i["inventory_id"] for i in items if i["logistic_type"] == "fulfillment" and i["inventory_id"]}
+    full_stock = {inv: get_fulfillment_stock(inv) for inv in full_invs}
+
+    groups = _reconcile_product_config(_group_store_items(items))
+
+    products = []
+    for g in groups:
+        its = g["items"]
+        main = max(its, key=lambda i: i.get("revenue", 0))
+
+        stock_deposito = sum(i["available_quantity"] for i in its if i["logistic_type"] != "fulfillment")
+        invs = {i["inventory_id"] for i in its if i["logistic_type"] == "fulfillment" and i["inventory_id"]}
+        stock_full = 0
+        for inv in invs:
+            if full_stock.get(inv) is not None:
+                stock_full += full_stock[inv]
+            else:  # fallback: available_quantity de la pub Full de ese inventario
+                stock_full += max((i["available_quantity"] for i in its if i["inventory_id"] == inv), default=0)
+        stock_full += sum(i["available_quantity"] for i in its
+                          if i["logistic_type"] == "fulfillment" and not i["inventory_id"])
+
+        price = prices.get(main["id"], {}).get("standard") or main["price"]
+        deals = [prices[i["id"]]["deal"] for i in its if prices.get(i["id"], {}).get("deal")]
+        sale_price = min(deals) if deals else None
+
+        units_periodo = sum(sales.get(i["id"], {}).get("units", 0) for i in its)
+        revenue_periodo = sum(sales.get(i["id"], {}).get("revenue", 0) for i in its)
+
+        products.append({
+            "group_id": g["config"]["id"],
+            "title": main["title"],
+            "thumbnail": main["thumbnail"],
+            "permalink": main["permalink"],
+            "stock_deposito": stock_deposito,
+            "stock_full": stock_full,
+            "price": price,
+            "sale_price": sale_price,
+            "units_periodo": units_periodo,
+            "revenue_periodo": revenue_periodo,
+        })
+
+    products.sort(key=lambda p: -p["revenue_periodo"])
+
+    return jsonify({
+        "products": products,
+        "period": period,
+        "facturado_mes": facturado_mes,
+        "dias_restantes": dias_restantes,
+        "as_of": now.strftime('%H:%M'),
+    })
+
+
+@app.route("/api/potencia-analyze", methods=["POST"])
+@login_required
+def potencia_analyze():
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        return jsonify({"error": "ANTHROPIC_API_KEY no configurada."}), 500
+
+    data = request.get_json() or {}
+    products = data.get("products", [])
+    target_revenue = data.get("target_revenue", 0)
+    facturado_mes = data.get("facturado_mes", 0)
+    dias_restantes = data.get("dias_restantes", 1) or 1
+    period_label = "mes actual" if data.get("period") == "month" else "últimos 30 días"
+
+    if not products:
+        return jsonify({"error": "Sin datos de stock/ventas para analizar."}), 400
+
+    gap = target_revenue - facturado_mes
+    top_products = sorted(products, key=lambda p: -p.get("revenue_periodo", 0))[:60]
+
+    catalog = [
+        {
+            "titulo": p["title"],
+            "precio_lista_ARS": p["price"],
+            "precio_con_promo_ARS": p.get("sale_price"),
+            "stock_deposito_propio": p["stock_deposito"],
+            "stock_full": p["stock_full"],
+            "unidades_vendidas_periodo": p["units_periodo"],
+            "revenue_periodo_ARS": p["revenue_periodo"],
+        }
+        for p in top_products
+    ]
+
+    gap_line = (
+        f"Falta facturar ${gap:,.0f} ARS (${gap / dias_restantes:,.0f} ARS/día necesarios)."
+        if gap > 0
+        else f"Ya se superó el objetivo por ${abs(gap):,.0f} ARS."
+    )
+
+    prompt = (
+        "Sos un experto en e-commerce y gestión de inventario en MercadoLibre Argentina.\n"
+        f"Te paso el catálogo activo de un vendedor: stock real separado entre depósito propio y el "
+        f"centro Full de MercadoLibre, precio (de lista y con promo activa si tiene), y ventas de los "
+        f"{period_label}, unidad por unidad.\n\n"
+        f"Facturación acumulada este mes: ${facturado_mes:,.0f} ARS.\n"
+        f"Objetivo total de facturación para lo que resta del mes: ${target_revenue:,.0f} ARS.\n"
+        f"Faltan {dias_restantes} días para cerrar el mes.\n"
+        f"{gap_line}\n\n"
+        "Estructura de costos de referencia: comisión MeLi ~15%; envío a cargo del vendedor ~$7.000 "
+        "si el precio es ≥ $33.000.\n\n"
+        "Con esta información armá una **estrategia concreta y priorizada**:\n"
+        "1. **Productos para bajar de precio / hacer descuento**: stock total (depósito + Full) alto "
+        "y rotación baja en el período. Sugerí % de descuento aproximado y el motivo, cuidando no "
+        "destruir el margen (usá la estructura de costos de referencia).\n"
+        "2. **Productos para enviar a Full**: tienen stock en depósito propio y buena rotación en el "
+        "período — priorizalos porque Full mejora visibilidad, buy box y tiempos de envío. Si ya tienen "
+        "algo de stock en Full pero se está por agotar, marcalo también acá.\n"
+        "3. **Productos a mantener/reforzar**: buena rotación y ya bien abastecidos en Full — mantener "
+        "y eventualmente reponer.\n"
+        "4. **Riesgo de quiebre de stock**: alta rotación con pocas unidades restantes (depósito + Full) "
+        "para lo que queda del mes.\n\n"
+        "Cerrá con un **Resumen ejecutivo**: 3-5 acciones priorizadas para esta semana y una conclusión "
+        "de si, aplicando la estrategia, se puede alcanzar el objetivo de facturación restante.\n\n"
+        f"Catálogo (top {len(catalog)} productos por revenue del período):\n"
+        f"{json.dumps(catalog, ensure_ascii=False, indent=1)}"
+    )
+
+    try:
+        client = anthropic.Anthropic(api_key=api_key)
+        response = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=4000,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return jsonify({"analysis": response.content[0].text})
+    except anthropic.APIError as e:
+        return jsonify({"error": str(e)}), 502
 
 
 if __name__ == "__main__":

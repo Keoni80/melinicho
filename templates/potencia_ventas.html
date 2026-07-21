@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Potencia tus Ventas — MeLi Nicho</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #1A1A2E; --surface: #16213E; --surface2: #0F3460;
+    --accent: #FFE600; --text: #E0E0E0; --muted: #7A8499;
+    --green: #4CAF50; --red: #F44336; --cyan: #00ACC1; --indigo: #5C6BC0;
+  }
+  body { background: var(--bg); color: var(--text);
+    font-family: 'Segoe UI', system-ui, sans-serif; font-size: 14px; line-height: 1.5; }
+  header { background: var(--surface); border-bottom: 2px solid var(--accent);
+    padding: .9rem 1.5rem; display: flex; align-items: center;
+    justify-content: space-between; gap: 1rem; flex-wrap: wrap;
+    position: sticky; top: 0; z-index: 10; }
+  .logo { font-size: 1.3rem; font-weight: 300; white-space: nowrap; }
+  .logo strong { color: var(--accent); font-weight: 800; }
+  .meta-chips { display: flex; gap: .5rem; flex-wrap: wrap; flex: 1; }
+  .chip { background: var(--surface2); border-radius: 20px; padding: .25rem .85rem;
+    font-size: .8rem; color: var(--muted); white-space: nowrap; }
+  .chip strong { color: var(--text); }
+  .chip.chip-gap { color: #ff9a92; }
+  .chip.chip-ok { color: #a5d6a7; }
+  .btn { border: none; border-radius: 8px; padding: .45rem 1rem; font-size: .85rem;
+    font-weight: 700; cursor: pointer; background: var(--surface2); color: var(--text); }
+  .btn:hover { opacity: .85; }
+  .btn:disabled { opacity: .45; cursor: default; }
+  .btn-accent { background: var(--accent); color: #1A1A2E; }
+  .btn-ai { background: linear-gradient(135deg, #283593, #5C6BC0); color: #fff; }
+
+  main { max-width: 1400px; margin: 0 auto; padding: 1.5rem 1rem 4rem; }
+
+  .controls { display: flex; gap: 1rem; flex-wrap: wrap; align-items: flex-end;
+    background: var(--surface); border-radius: 10px; padding: 1rem 1.2rem; margin-bottom: 1.2rem; }
+  .field label { display: block; font-size: .7rem; color: var(--muted); text-transform: uppercase;
+    letter-spacing: .05em; margin-bottom: .35rem; }
+  .field select, .field input { background: var(--bg); border: 1px solid var(--surface2);
+    border-radius: 8px; color: var(--text); font-size: .9rem; padding: .55rem .8rem; min-width: 200px; }
+  .field select:focus, .field input:focus { outline: none; border-color: var(--accent); }
+
+  #loading { display: flex; flex-direction: column; align-items: center; justify-content: center;
+    height: 40vh; color: var(--muted); font-size: 1.05rem; gap: .75rem; text-align: center; }
+  .spinner { width: 34px; height: 34px; border: 4px solid var(--surface2);
+    border-top-color: var(--accent); border-radius: 50%; animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #error-box { display: none; background: rgba(244,67,54,.12); border: 1px solid var(--red);
+    border-radius: 8px; padding: .8rem 1.2rem; margin-bottom: 1rem; color: #ff9a92; }
+
+  #strategy-box { display: none; background: var(--surface); border-radius: 10px;
+    padding: 1.3rem 1.4rem; margin-bottom: 1.2rem; line-height: 1.7; }
+  #strategy-box h2, #strategy-box h3, #strategy-box h4 { color: var(--accent); margin: .8rem 0 .3rem; }
+  #strategy-box h2:first-child, #strategy-box h3:first-child { margin-top: 0; }
+  #strategy-box ul { padding-left: 1.3rem; margin: .3rem 0 .6rem; }
+  #strategy-box table { width: 100%; border-collapse: collapse; margin: .5rem 0; font-size: .85rem; }
+  #strategy-box th { background: var(--surface2); color: var(--muted); padding: .4rem .6rem; text-align: left; }
+  #strategy-box td { padding: .4rem .6rem; border-bottom: 1px solid var(--surface2); }
+  #strategy-box code { background: var(--bg); border-radius: 4px; padding: .1rem .35rem; }
+  .strategy-loading { color: var(--muted); display: flex; align-items: center; gap: .6rem; }
+  .spinner-sm { width: 18px; height: 18px; border: 3px solid var(--surface2);
+    border-top-color: var(--accent); border-radius: 50%; animation: spin 1s linear infinite; }
+
+  table.data { width: 100%; border-collapse: collapse; font-size: .85rem; }
+  thead th { background: var(--surface2); color: var(--muted); font-size: .72rem;
+    text-transform: uppercase; letter-spacing: .04em; padding: .55rem .6rem;
+    text-align: left; position: sticky; top: 66px; z-index: 5; }
+  thead th.num { text-align: right; }
+  td { padding: .55rem .6rem; border-bottom: 1px solid var(--surface2); vertical-align: middle; }
+  td.num { text-align: right; white-space: nowrap; }
+  tr.prod-row:hover td { background: rgba(15,52,96,.35); }
+
+  .prod-cell { display: flex; align-items: center; gap: .6rem; min-width: 260px; }
+  .prod-cell img { width: 44px; height: 44px; border-radius: 6px; object-fit: cover;
+    background: var(--surface2); flex-shrink: 0; }
+  .prod-title { color: var(--text); font-weight: 600; text-decoration: none; display: block;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 340px; }
+  .prod-title:hover { color: var(--accent); }
+
+  .badge-full { background: rgba(0,172,193,.15); color: var(--cyan); border-radius: 5px;
+    padding: .05rem .4rem; font-size: .78rem; font-weight: 700; }
+  .badge-dep { background: rgba(92,107,192,.18); color: var(--indigo); border-radius: 5px;
+    padding: .05rem .4rem; font-size: .78rem; font-weight: 700; }
+  .price-old { color: var(--muted); text-decoration: line-through; font-size: .78rem; }
+  .price-final { color: var(--accent); font-weight: 700; }
+  .sales-sub { font-size: .72rem; color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">💪 Potencia tus <strong>Ventas</strong></div>
+  <div class="meta-chips" id="meta-chips"></div>
+  <button class="btn btn-accent" onclick="loadData()">↻ Recargar</button>
+</header>
+<main>
+  <div class="controls">
+    <div class="field">
+      <label for="period-select">Período de ventas</label>
+      <select id="period-select">
+        <option value="30d">Últimos 30 días</option>
+        <option value="month">Mes actual</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="target-input">Objetivo de facturación restante (ARS)</label>
+      <input type="text" id="target-input" placeholder="Ej: 5.000.000" inputmode="numeric">
+    </div>
+    <button class="btn btn-ai" id="strategy-btn">🤖 Armar estrategia con IA</button>
+  </div>
+
+  <div id="error-box"></div>
+  <div id="loading">
+    <div class="spinner"></div>
+    <div>Cargando stock, precios y ventas del período…<br>
+    <span style="font-size:.85rem">puede tardar ~30 segundos</span></div>
+  </div>
+
+  <div id="strategy-box"></div>
+
+  <div id="content" style="display:none">
+    <div class="table-wrap" style="overflow-x:auto">
+      <table class="data">
+        <thead>
+          <tr>
+            <th>Producto</th>
+            <th class="num">Tu depósito</th>
+            <th class="num">Full ⚡</th>
+            <th class="num">Precio final</th>
+            <th class="num">Vendidos período</th>
+            <th class="num">Revenue período</th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+  </div>
+</main>
+
+<script>
+let products = [];
+let lastData = null;
+
+function fmtPrice(p) {
+    return new Intl.NumberFormat('es-AR', {
+        style: 'currency', currency: 'ARS', maximumFractionDigits: 0,
+    }).format(p || 0);
+}
+
+function esc(str) {
+    if (str == null) return '';
+    return String(str)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function renderInline(text) {
+    return esc(text)
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.+?)\*/g, '<em>$1</em>')
+        .replace(/`(.+?)`/g, '<code>$1</code>');
+}
+
+function mdToHtml(md) {
+    const lines = md.split('\n');
+    const out = [];
+    let inTable = false, inList = false;
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (line.trim().startsWith('|')) {
+            if (inList) { out.push('</ul>'); inList = false; }
+            if (!inTable) { out.push('<table><tbody>'); inTable = true; }
+            if (/^\|[-| :]+\|$/.test(line.trim())) continue;
+            const cells = line.trim().replace(/^\||\|$/g, '').split('|').map(c => c.trim());
+            const isHeader = (i + 1 < lines.length && /^\|[-| :]+\|$/.test(lines[i+1]?.trim()));
+            const tag = isHeader ? 'th' : 'td';
+            out.push('<tr>' + cells.map(c => `<${tag}>${renderInline(c)}</${tag}>`).join('') + '</tr>');
+            continue;
+        } else if (inTable) { out.push('</tbody></table>'); inTable = false; }
+        if (/^[-•*] /.test(line.trim())) {
+            if (!inList) { out.push('<ul>'); inList = true; }
+            out.push(`<li>${renderInline(line.trim().slice(2))}</li>`);
+            continue;
+        } else if (inList) { out.push('</ul>'); inList = false; }
+        if (/^### /.test(line)) out.push(`<h4>${renderInline(line.slice(4))}</h4>`);
+        else if (/^## /.test(line)) out.push(`<h3>${renderInline(line.slice(3))}</h3>`);
+        else if (/^# /.test(line)) out.push(`<h2>${renderInline(line.slice(2))}</h2>`);
+        else if (/^---/.test(line.trim())) out.push('<hr style="border-color:var(--surface2);margin:.6rem 0">');
+        else if (line.trim() === '') out.push('');
+        else out.push(`<p style="margin:.25rem 0">${renderInline(line)}</p>`);
+    }
+    if (inList) out.push('</ul>');
+    if (inTable) out.push('</tbody></table>');
+    return out.join('');
+}
+
+function showError(msg) {
+    const el = document.getElementById('error-box');
+    if (msg) { el.textContent = '⚠ ' + msg; el.style.display = 'block'; }
+    else el.style.display = 'none';
+}
+
+async function loadData() {
+    showError('');
+    document.getElementById('strategy-box').style.display = 'none';
+    document.getElementById('content').style.display = 'none';
+    document.getElementById('loading').style.display = 'flex';
+    const period = document.getElementById('period-select').value;
+    try {
+        const resp = await fetch(`/api/potencia-datos?period=${encodeURIComponent(period)}`);
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error || `Error ${resp.status}`);
+        lastData = data;
+        products = data.products;
+        renderChips(data);
+        renderTable();
+        document.getElementById('content').style.display = 'block';
+    } catch (e) {
+        showError(e.message);
+    } finally {
+        document.getElementById('loading').style.display = 'none';
+    }
+}
+
+function renderChips(data) {
+    const periodLabel = data.period === 'month' ? 'mes actual' : 'últimos 30 días';
+    document.getElementById('meta-chips').innerHTML =
+        `<span class="chip">📅 <strong>${periodLabel}</strong></span>` +
+        `<span class="chip">💰 Facturado este mes: <strong>${fmtPrice(data.facturado_mes)}</strong></span>` +
+        `<span class="chip">⏳ <strong>${data.dias_restantes}</strong> días restantes</span>` +
+        `<span class="chip">al ${esc(data.as_of)}</span>`;
+}
+
+function rowHtml(p) {
+    const priceCell = p.sale_price
+        ? `<span class="price-old">${fmtPrice(p.price)}</span><br><span class="price-final">${fmtPrice(p.sale_price)}</span>`
+        : `<span class="price-final">${fmtPrice(p.price)}</span>`;
+    return `
+    <tr class="prod-row">
+      <td>
+        <div class="prod-cell">
+          <img src="${esc(p.thumbnail)}" loading="lazy" onerror="this.style.visibility='hidden'">
+          <a class="prod-title" href="${esc(p.permalink)}" target="_blank" title="${esc(p.title)}">${esc(p.title)}</a>
+        </div>
+      </td>
+      <td class="num">${p.stock_deposito ? `<span class="badge-dep">${p.stock_deposito.toLocaleString('es-AR')}</span>` : '—'}</td>
+      <td class="num">${p.stock_full ? `<span class="badge-full">⚡ ${p.stock_full.toLocaleString('es-AR')}</span>` : '—'}</td>
+      <td class="num">${priceCell}</td>
+      <td class="num"><strong>${p.units_periodo.toLocaleString('es-AR')} u</strong></td>
+      <td class="num">${p.revenue_periodo > 0 ? fmtPrice(p.revenue_periodo) : '–'}</td>
+    </tr>`;
+}
+
+function renderTable() {
+    document.getElementById('rows').innerHTML = products.map(rowHtml).join('');
+}
+
+async function runStrategy() {
+    if (!lastData || !products.length) {
+        showError('Cargá los datos primero.');
+        return;
+    }
+    const btn = document.getElementById('strategy-btn');
+    const box = document.getElementById('strategy-box');
+    const target = parseInt(document.getElementById('target-input').value.replace(/\D/g, ''), 10) || 0;
+
+    btn.disabled = true;
+    btn.textContent = '⏳ Armando estrategia...';
+    box.style.display = 'block';
+    box.innerHTML = `<div class="strategy-loading"><div class="spinner-sm"></div>
+        Analizando catálogo con IA (puede tardar 1-2 minutos)…</div>`;
+
+    try {
+        const resp = await fetch('/api/potencia-analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                products: products,
+                period: lastData.period,
+                facturado_mes: lastData.facturado_mes,
+                dias_restantes: lastData.dias_restantes,
+                target_revenue: target,
+            }),
+        });
+        const data = await resp.json();
+        if (!resp.ok || data.error) throw new Error(data.error || 'No se pudo analizar.');
+        box.innerHTML = mdToHtml(data.analysis);
+        box.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } catch (e) {
+        box.innerHTML = `<span style="color:var(--red)">⚠ ${esc(e.message)}</span>`;
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '🤖 Armar estrategia con IA';
+    }
+}
+
+document.getElementById('target-input').addEventListener('input', e => {
+    const digits = e.target.value.replace(/\D/g, '');
+    e.target.value = digits ? parseInt(digits, 10).toLocaleString('es-AR') : '';
+});
+document.getElementById('period-select').addEventListener('change', loadData);
+document.getElementById('strategy-btn').addEventListener('click', runStrategy);
+
+loadData();
+</script>
+</body>
+</html>

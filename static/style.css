@@ -1026,6 +1026,7 @@ main {
 .nav-item--buscomp  .nav-ico { background: linear-gradient(135deg,#1565C0,#42A5F5); }
 .nav-item--store    .nav-ico { background: linear-gradient(135deg,#1B5E20,#43A047); }
 .nav-item--misprod  .nav-ico { background: linear-gradient(135deg,#006064,#00ACC1); }
+.nav-item--potencia .nav-ico { background: linear-gradient(135deg,#283593,#5C6BC0); }
 .nav-item--sourcing .nav-ico { background: linear-gradient(135deg,#4A148C,#7B1FA2); }
 
 .sidebar-logout {

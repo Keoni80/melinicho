@@ -207,6 +207,11 @@ document.addEventListener('DOMContentLoaded', () => {
         window.open('/mis-productos', '_blank');
     });
 
+    // Potencia tus Ventas — página completa en pestaña nueva
+    document.getElementById('potencia-btn').addEventListener('click', () => {
+        window.open('/potencia-ventas', '_blank');
+    });
+
     // Buscador de Competidores
     document.getElementById('buscomp-btn').addEventListener('click', () => {
         document.getElementById('buscomp-modal').style.display = 'flex';
