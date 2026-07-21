@@ -67,7 +67,7 @@
   table.data { width: 100%; border-collapse: collapse; font-size: .85rem; }
   thead th { background: var(--surface2); color: var(--muted); font-size: .72rem;
     text-transform: uppercase; letter-spacing: .04em; padding: .55rem .6rem;
-    text-align: left; position: sticky; top: 66px; z-index: 5; }
+    text-align: left; position: sticky; top: var(--header-h, 66px); z-index: 5; }
   thead th.num { text-align: right; }
   td { padding: .55rem .6rem; border-bottom: 1px solid var(--surface2); vertical-align: middle; }
   td.num { text-align: right; white-space: nowrap; }
@@ -196,6 +196,12 @@ function mdToHtml(md) {
     return out.join('');
 }
 
+function syncHeaderHeight() {
+    const h = document.querySelector('header').offsetHeight;
+    document.documentElement.style.setProperty('--header-h', h + 'px');
+}
+window.addEventListener('resize', syncHeaderHeight);
+
 function showError(msg) {
     const el = document.getElementById('error-box');
     if (msg) { el.textContent = '⚠ ' + msg; el.style.display = 'block'; }
@@ -231,6 +237,7 @@ function renderChips(data) {
         `<span class="chip">💰 Facturado este mes: <strong>${fmtPrice(data.facturado_mes)}</strong></span>` +
         `<span class="chip">⏳ <strong>${data.dias_restantes}</strong> días restantes</span>` +
         `<span class="chip">al ${esc(data.as_of)}</span>`;
+    syncHeaderHeight();
 }
 
 function rowHtml(p) {
@@ -303,6 +310,7 @@ document.getElementById('target-input').addEventListener('input', e => {
 document.getElementById('period-select').addEventListener('change', loadData);
 document.getElementById('strategy-btn').addEventListener('click', runStrategy);
 
+syncHeaderHeight();
 loadData();
 </script>
 </body>
