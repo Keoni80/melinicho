@@ -18,7 +18,7 @@ from functools import wraps
 from analyzer import analyze_niche
 from meli_api import (
     derive_keyword, fetch_orders_total, fetch_sales_by_item, get_categories,
-    get_fulfillment_stock, get_item_position, get_item_raw, get_items_catalog_ids, get_items_prices,
+    get_fulfillment_stock, get_item_position, get_items_catalog_ids, get_items_prices,
     get_my_store_items, get_my_user_id, get_subcategories, sample_subcategory, search_meli,
 )
 
@@ -91,6 +91,7 @@ def init_products_table():
                 id                   INTEGER PRIMARY KEY AUTOINCREMENT,
                 item_ids             TEXT NOT NULL DEFAULT '[]',
                 landed_cost_ars      REAL,
+                costo_usd            REAL,
                 proyeccion_mes       INTEGER,
                 keyword              TEXT,
                 position             INTEGER,
@@ -100,6 +101,9 @@ def init_products_table():
                 updated_at           DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(product_config)")}
+        if "costo_usd" not in cols:
+            conn.execute("ALTER TABLE product_config ADD COLUMN costo_usd REAL")
 
 
 init_db()
@@ -1544,7 +1548,7 @@ def _reconcile_product_config(groups):
                 (json.dumps(ids), kw),
             )
             g["config"] = {
-                "id": cur.lastrowid, "keyword": kw, "landed_cost_ars": None,
+                "id": cur.lastrowid, "keyword": kw, "landed_cost_ars": None, "costo_usd": None,
                 "proyeccion_mes": None, "position": None, "position_total": None,
                 "position_ts": None, "position_competitors": None,
             }
@@ -1562,16 +1566,6 @@ def mis_productos_page():
 @login_required
 def potencia_ventas_page():
     return render_template("potencia_ventas.html")
-
-
-@app.route("/api/debug-item")
-@login_required
-def debug_item():
-    """TEMPORAL: dump crudo de una publicación para encontrar el campo de IVA/impuestos nacionales."""
-    item_id = request.args.get("id", "")
-    if not item_id:
-        return jsonify({"error": "Falta ?id=MLA..."}), 400
-    return jsonify(get_item_raw(item_id))
 
 
 @app.route("/api/mis-productos")
@@ -1667,6 +1661,9 @@ def mis_productos_config():
     if "landed_cost_ars" in data:
         v = data["landed_cost_ars"]
         fields["landed_cost_ars"] = float(v) if v not in (None, "") else None
+    if "costo_usd" in data:
+        v = data["costo_usd"]
+        fields["costo_usd"] = float(v) if v not in (None, "") else None
     if "keyword" in data:
         fields["keyword"] = (data["keyword"] or "").strip().lower()
     if not fields:
@@ -1851,6 +1848,7 @@ def potencia_datos():
     import calendar
 
     period = request.args.get("period", "30d")
+    tc = float(request.args.get("tc") or 0)
     tz_arg = timezone(timedelta(hours=-3))
     now = datetime.now(tz_arg)
     fmt = '%Y-%m-%dT%H:%M:%S.000-0300'
@@ -1908,6 +1906,12 @@ def potencia_datos():
         units_periodo = sum(sales.get(i["id"], {}).get("units", 0) for i in its)
         revenue_periodo = sum(sales.get(i["id"], {}).get("revenue", 0) for i in its)
 
+        iva_pct = main.get("iva_pct")
+        costo_usd = g["config"].get("costo_usd")
+        landed_cost_ars = None
+        if costo_usd and tc:
+            landed_cost_ars = costo_usd * tc * (1 + (iva_pct or 0) / 100)
+
         products.append({
             "group_id": g["config"]["id"],
             "title": main["title"],
@@ -1919,6 +1923,9 @@ def potencia_datos():
             "sale_price": sale_price,
             "units_periodo": units_periodo,
             "revenue_periodo": revenue_periodo,
+            "iva_pct": iva_pct,
+            "costo_usd": costo_usd,
+            "landed_cost_ars": landed_cost_ars,
         })
 
     products.sort(key=lambda p: -p["revenue_periodo"])
@@ -1952,6 +1959,15 @@ def potencia_analyze():
     gap = target_revenue - facturado_mes
     top_products = sorted(products, key=lambda p: -p.get("revenue_periodo", 0))[:60]
 
+    def margen_info(p):
+        precio_final = p.get("sale_price") or p["price"]
+        landed = p.get("landed_cost_ars")
+        if not landed or not precio_final:
+            return "sin costo cargado"
+        envio = 7000 if precio_final >= 33000 else 0
+        margen = precio_final * 0.85 - envio - landed
+        return f"${margen:,.0f} ARS/u ({margen / precio_final * 100:.0f}% del precio de venta)"
+
     catalog = [
         {
             "titulo": p["title"],
@@ -1961,6 +1977,8 @@ def potencia_analyze():
             "stock_full": p["stock_full"],
             "unidades_vendidas_periodo": p["units_periodo"],
             "revenue_periodo_ARS": p["revenue_periodo"],
+            "costo_landed_ARS_por_unidad": p.get("landed_cost_ars"),
+            "margen_actual_precalculado": margen_info(p),
         }
         for p in top_products
     ]
@@ -1974,18 +1992,23 @@ def potencia_analyze():
     prompt = (
         "Sos un experto en e-commerce y gestión de inventario en MercadoLibre Argentina.\n"
         f"Te paso el catálogo activo de un vendedor: stock real separado entre depósito propio y el "
-        f"centro Full de MercadoLibre, precio (de lista y con promo activa si tiene), y ventas de los "
-        f"{period_label}, unidad por unidad.\n\n"
+        f"centro Full de MercadoLibre, precio (de lista y con promo activa si tiene), ventas de los "
+        f"{period_label} unidad por unidad, y el margen actual ya calculado cuando el vendedor cargó "
+        f"el costo del producto (costo en USD sin IVA → convertido a ARS con el tipo de cambio e IVA "
+        f"real de cada publicación).\n\n"
         f"Facturación acumulada este mes: ${facturado_mes:,.0f} ARS.\n"
         f"Objetivo total de facturación para lo que resta del mes: ${target_revenue:,.0f} ARS.\n"
         f"Faltan {dias_restantes} días para cerrar el mes.\n"
         f"{gap_line}\n\n"
-        "Estructura de costos de referencia: comisión MeLi ~15%; envío a cargo del vendedor ~$7.000 "
-        "si el precio es ≥ $33.000.\n\n"
+        "IMPORTANTE sobre el margen: 'margen_actual_precalculado' ya viene calculado (comisión MeLi 15%, "
+        "envío $7.000 a cargo del vendedor si el precio ≥ $33.000, menos el costo landed real). NO "
+        "recalcules ni inventes esta aritmética — usalo tal cual viene. Para productos con "
+        "'sin costo cargado', no tenés margen real: no asumas uno, y si vas a sugerir descuento en esos "
+        "casos aclará que falta cargar el costo para confirmar que el precio con descuento sigue siendo rentable.\n\n"
         "Con esta información armá una **estrategia concreta y priorizada**:\n"
         "1. **Productos para bajar de precio / hacer descuento**: stock total (depósito + Full) alto "
-        "y rotación baja en el período. Sugerí % de descuento aproximado y el motivo, cuidando no "
-        "destruir el margen (usá la estructura de costos de referencia).\n"
+        "y rotación baja en el período. Sugerí % de descuento aproximado y el motivo, verificando con el "
+        "margen precalculado que el descuento no deje el margen negativo o por debajo del 15-20%.\n"
         "2. **Productos para enviar a Full**: tienen stock en depósito propio y buena rotación en el "
         "período — priorizalos porque Full mejora visibilidad, buy box y tiempos de envío. Si ya tienen "
         "algo de stock en Full pero se está por agotar, marcalo también acá.\n"

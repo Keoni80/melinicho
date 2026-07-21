@@ -498,7 +498,7 @@ def get_my_store_items():
         return [], None
 
     attrs = ("id,title,price,sold_quantity,available_quantity,status,category_id,"
-             "thumbnail,permalink,catalog_product_id,inventory_id,shipping")
+             "thumbnail,permalink,catalog_product_id,inventory_id,shipping,attributes")
     items = []
     for i in range(0, len(all_ids), 20):
         batch = all_ids[i:i+20]
@@ -527,11 +527,23 @@ def get_my_store_items():
                         "catalog_product_id": b.get("catalog_product_id") or "",
                         "inventory_id":       b.get("inventory_id") or "",
                         "logistic_type":      (b.get("shipping") or {}).get("logistic_type", ""),
+                        "iva_pct":            _parse_iva_pct(b.get("attributes") or []),
                     })
         time.sleep(0.15)
 
     items.sort(key=lambda x: -x["revenue"])
     return items, None
+
+
+def _parse_iva_pct(attributes):
+    """Extrae el % de IVA cargado en la publicación (atributo VALUE_ADDED_TAX, ej. '10.5 %')."""
+    import re
+    for attr in attributes:
+        if attr.get("id") == "VALUE_ADDED_TAX":
+            m = re.search(r"[\d.,]+", attr.get("value_name") or "")
+            if m:
+                return float(m.group().replace(",", "."))
+    return None
 
 
 def fetch_sales_by_item(user_id, date_from, date_to):
@@ -646,17 +658,6 @@ def get_fulfillment_stock(inventory_id):
     except Exception as e:
         log.warning("fulfillment stock failed for %s: %s", inventory_id, e)
     return None
-
-
-def get_item_raw(item_id):
-    """DEBUG: devuelve el JSON completo (sin filtrar atributos) de una publicación."""
-    try:
-        r = _get(f"{BASE_URL}/items/{item_id}", timeout=15)
-        if r.ok:
-            return r.json()
-        return {"error": r.status_code, "detail": r.text[:500]}
-    except Exception as e:
-        return {"error": str(e)}
 
 
 def derive_keyword(title):

@@ -87,6 +87,14 @@
   .price-old { color: var(--muted); text-decoration: line-through; font-size: .78rem; }
   .price-final { color: var(--accent); font-weight: 700; }
   .sales-sub { font-size: .72rem; color: var(--muted); }
+
+  .cfg-input { background: var(--bg); border: 1px solid var(--surface2); border-radius: 6px;
+    color: var(--text); font-size: .85rem; padding: .25rem .4rem; width: 5.2rem; text-align: right;
+    transition: border-color .3s; }
+  .cfg-input:focus { outline: none; border-color: var(--accent); }
+  .cfg-input.saved { border-color: var(--green); }
+  .landed-cell { font-size: .78rem; color: var(--muted); }
+  .landed-cell strong { color: var(--text); }
 </style>
 </head>
 <body>
@@ -108,6 +116,11 @@
       <label for="target-input">Objetivo de facturación restante (ARS)</label>
       <input type="text" id="target-input" placeholder="Ej: 5.000.000" inputmode="numeric">
     </div>
+    <div class="field">
+      <label for="tc-input">Tipo de cambio (ARS/USD)</label>
+      <input type="number" id="tc-input" min="1" style="min-width:120px">
+      <small id="tc-hint" style="display:block;font-size:.7rem;color:var(--muted);margin-top:.2rem"></small>
+    </div>
     <button class="btn btn-ai" id="strategy-btn">🤖 Armar estrategia con IA</button>
   </div>
 
@@ -128,6 +141,8 @@
           <th class="num">Tu depósito</th>
           <th class="num">Full ⚡</th>
           <th class="num">Precio final</th>
+          <th class="num">Costo USD (sin IVA)</th>
+          <th class="num">Costo landed (IVA real)</th>
           <th class="num">Vendidos período</th>
           <th class="num">Revenue período</th>
         </tr>
@@ -140,6 +155,8 @@
 <script>
 let products = [];
 let lastData = null;
+let tcManual = false;
+let tcReloadTimer = null;
 
 function fmtPrice(p) {
     return new Intl.NumberFormat('es-AR', {
@@ -206,14 +223,33 @@ function showError(msg) {
     else el.style.display = 'none';
 }
 
+async function fetchDolarOficial() {
+    const hint = document.getElementById('tc-hint');
+    hint.textContent = 'Consultando dólar oficial…';
+    try {
+        const resp = await fetch('https://dolarapi.com/v1/dolares/oficial');
+        if (!resp.ok) throw new Error(resp.status);
+        const d = await resp.json();
+        if (tcManual) return;
+        document.getElementById('tc-input').value = d.venta;
+        const fecha = new Date(d.fechaActualizacion).toLocaleDateString('es-AR', { day: 'numeric', month: 'numeric' });
+        hint.textContent = `Oficial venta $${d.venta.toLocaleString('es-AR')} · ${fecha} (dolarapi.com)`;
+        loadData();
+    } catch (e) {
+        hint.textContent = 'No se pudo obtener el dólar oficial — ingresalo a mano';
+        loadData();
+    }
+}
+
 async function loadData() {
     showError('');
     document.getElementById('strategy-box').style.display = 'none';
     document.getElementById('content').style.display = 'none';
     document.getElementById('loading').style.display = 'flex';
     const period = document.getElementById('period-select').value;
+    const tc = document.getElementById('tc-input').value || 0;
     try {
-        const resp = await fetch(`/api/potencia-datos?period=${encodeURIComponent(period)}`);
+        const resp = await fetch(`/api/potencia-datos?period=${encodeURIComponent(period)}&tc=${encodeURIComponent(tc)}`);
         const data = await resp.json();
         if (!resp.ok) throw new Error(data.error || `Error ${resp.status}`);
         lastData = data;
@@ -242,8 +278,11 @@ function rowHtml(p) {
     const priceCell = p.sale_price
         ? `<span class="price-old">${fmtPrice(p.price)}</span><br><span class="price-final">${fmtPrice(p.sale_price)}</span>`
         : `<span class="price-final">${fmtPrice(p.price)}</span>`;
+    const landedCell = p.landed_cost_ars
+        ? `<span class="landed-cell"><strong>${fmtPrice(p.landed_cost_ars)}</strong><br>IVA ${p.iva_pct ?? '—'}%</span>`
+        : `<span class="landed-cell">${p.costo_usd ? 'cargá el TC' : '—'}${p.iva_pct != null ? `<br>IVA ${p.iva_pct}%` : ''}</span>`;
     return `
-    <tr class="prod-row">
+    <tr class="prod-row" data-gid="${p.group_id}">
       <td>
         <div class="prod-cell">
           <img src="${esc(p.thumbnail)}" loading="lazy" onerror="this.style.visibility='hidden'">
@@ -253,6 +292,9 @@ function rowHtml(p) {
       <td class="num">${p.stock_deposito ? `<span class="badge-dep">${p.stock_deposito.toLocaleString('es-AR')}</span>` : '—'}</td>
       <td class="num">${p.stock_full ? `<span class="badge-full">⚡ ${p.stock_full.toLocaleString('es-AR')}</span>` : '—'}</td>
       <td class="num">${priceCell}</td>
+      <td class="num"><input class="cfg-input" type="number" min="0" step="0.01" value="${p.costo_usd ?? ''}"
+        placeholder="USD" onchange="saveCosto(${p.group_id}, this.value, this)"></td>
+      <td class="num">${landedCell}</td>
       <td class="num"><strong>${p.units_periodo.toLocaleString('es-AR')} u</strong></td>
       <td class="num">${p.revenue_periodo > 0 ? fmtPrice(p.revenue_periodo) : '–'}</td>
     </tr>`;
@@ -260,6 +302,22 @@ function rowHtml(p) {
 
 function renderTable() {
     document.getElementById('rows').innerHTML = products.map(rowHtml).join('');
+}
+
+async function saveCosto(gid, value, input) {
+    try {
+        const resp = await fetch('/api/mis-productos/config', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ group_id: gid, costo_usd: value }),
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error || `Error ${resp.status}`);
+        input.classList.add('saved');
+        setTimeout(() => input.classList.remove('saved'), 1500);
+        await loadData();
+    } catch (e) {
+        showError(e.message);
+    }
 }
 
 async function runStrategy() {
@@ -307,9 +365,15 @@ document.getElementById('target-input').addEventListener('input', e => {
 });
 document.getElementById('period-select').addEventListener('change', loadData);
 document.getElementById('strategy-btn').addEventListener('click', runStrategy);
+document.getElementById('tc-input').addEventListener('input', () => {
+    tcManual = true;
+    document.getElementById('tc-hint').textContent = 'Valor manual';
+    clearTimeout(tcReloadTimer);
+    tcReloadTimer = setTimeout(loadData, 600);
+});
 
 syncHeaderHeight();
-loadData();
+fetchDolarOficial();
 </script>
 </body>
 </html>
