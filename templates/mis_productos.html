@@ -240,9 +240,12 @@ function renderChips(data) {
     const totalUnits = products.reduce((a, p) => a + p.sales_30d_units, 0);
     const totalRev = products.reduce((a, p) => a + p.sales_30d_revenue, 0);
     const low = products.filter(p => p.needs_strategy).length;
+    const stockValue = products.reduce((a, p) =>
+        a + (p.stock_deposito + p.stock_full) * (p.sale_price || p.price), 0);
     document.getElementById('meta-chips').innerHTML =
         `<span class="chip"><strong>${products.length}</strong> productos</span>` +
         `<span class="chip">ventas 30d: <strong>${totalUnits.toLocaleString('es-AR')} u · ${fmtPrice(totalRev)}</strong></span>` +
+        `<span class="chip">stock total si se vende todo: <strong>${fmtPrice(stockValue)}</strong></span>` +
         (low ? `<span class="chip" style="color:var(--red)"><strong>${low}</strong> bajo proyección</span>` : '') +
         `<span class="chip">al ${esc(data.as_of)}</span>`;
 }
