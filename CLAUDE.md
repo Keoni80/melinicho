@@ -58,6 +58,8 @@ Token refresh in `_get()` handles both 401 and 403.
 - `templates/index.html` — Main UI with all modals
 - `templates/nubi_results.html` — Full-page Nubimetrics results (opens in new tab)
 - `templates/sourcing_report.html` — Full-page Sourcing analysis report (opens in new tab)
+- `templates/mis_productos.html` — standalone page: stock (depósito/Full), precio final, ventas 30d, posicionamiento, estrategia IA por producto
+- `templates/potencia_ventas.html` — standalone page: meta de facturación + estrategia de portfolio (ver "Features added 2026-07-21")
 - `Procfile` — Gunicorn config (timeout 180s)
 
 ## Deploy
@@ -72,6 +74,52 @@ Needs `NODE_EXTRA_CA_CERTS` env var set if machine has AVG antivirus (SSL interc
 - `sold_quantity` always 0 because `/items/{id}` is blocked from Railway IPs since April 2025
 - Apify search takes 20-30 seconds (scraper startup time)
 - Free Railway plan has resource limits
+
+---
+
+## Features added 2026-07-21
+
+### 💪 Potencia tus Ventas (meta de facturación + estrategia de portfolio)
+**Button:** "💪 Potencia tus Ventas" (indigo gradient `#283593` → `#5C6BC0`, sidebar "Mi negocio") → opens `/potencia-ventas` in a new tab (standalone page, same pattern as `mis_productos.html`: no app.js, own inline JS/CSS).
+
+**Purpose:** portfolio-wide snapshot (not per-product review like "mis productos") tied to a business goal: stock (depósito + Full), price, and sales of a chosen period (last 30 days or current month) per product, plus a monthly revenue target → Claude drafts a prioritized strategy (discounts, what to send to Full, stock-out risk, executive summary).
+
+**Key mechanics:**
+- **Period toggle:** "últimos 30 días" / "mes actual", reloads on change.
+- **Meta de facturación:** user enters target ARS for the *rest* of the month; backend computes `facturado_mes` (via `fetch_orders_total`, month-to-date) and `dias_restantes` (calendar days left), frontend shows the gap.
+- **Costo real por producto:** editable "Costo USD (sin IVA)" input per row, saved to `product_config.costo_usd` (shared table/column with "mis productos" — same `group_id`). Combined with the item's real IVA % (see below) and a manual/auto TC (dolarapi, same pattern as Sourcing/Competidores) → `landed_cost_ars = costo_usd × tc × (1 + iva_pct/100)`.
+- **AI strategy (`POST /api/potencia-analyze`):** streaming (see gotcha below). Receives the precalculated margin per product (comisión MeLi 15%, envío $7.000 si precio≥$33k, menos landed real) — prompt explicitly forbids Claude from inventing this arithmetic; for products with no cost loaded it must say so instead of assuming a margin.
+- **Print/PDF:** "🖨 Imprimir / PDF" button → `window.print()` + `@media print` stylesheet (light theme, hides controls/buttons) — same pattern as `sourcing_report.html`. Browser's print dialog offers "Save as PDF", no server-side PDF generation.
+
+**Backend endpoints:** `GET /potencia-ventas` (page), `GET /api/potencia-datos?period=30d|month&tc=N` (reuses `get_my_store_items`, `fetch_sales_by_item`, `get_items_prices`, `_group_store_items`/`_reconcile_product_config` — same product grouping as "mis productos", same `group_id`s), `POST /api/potencia-analyze` (streaming).
+
+**Files:** `templates/potencia_ventas.html`, plus shared logic in `app.py`/`meli_api.py` described below.
+
+---
+
+### 💰 IVA real + costo USD → margen real (compartido entre mis-productos y Potencia tus Ventas)
+Since April 2025 MeLi's *Régimen de Transparencia Fiscal* requires sellers to declare IVA per listing. It's exposed via `/items/{id}` → `attributes[]` where `id == "VALUE_ADDED_TAX"`, `value_name` like `"10.5 %"` or `"21 %"` (parsed with `_parse_iva_pct()` in `meli_api.py`, added to `get_my_store_items()`'s `attributes` param and returned as `iva_pct` per item). Some older items lack this attribute (`iva_pct: None` → treated as 0% for landed-cost calc, a known small underestimate).
+
+`product_config` gained a `costo_usd` column (REAL, migrated via `ALTER TABLE` in `init_products_table()` — safe to re-run, checks `PRAGMA table_info` first). This is the seller's cost **in USD, without IVA**; landed ARS cost is derived (see formula above), never entered directly anymore. The *old* `landed_cost_ars` field (in "mis productos", a direct ARS value) still exists for backward compat but **don't tell users the two fields are interchangeable** — a user once entered USD-sized numbers (e.g. `3.29`) into `landed_cost_ars` expecting it to work like `costo_usd`, corrupting both that field's meaning and "mis productos"'s own margin calc for those rows. Had to write a one-off migration (temporary endpoint, run once, removed) to move the mistaken values over and null out `landed_cost_ars`.
+
+---
+
+### 📦 Stock depósito real: Multi-Origin Stock (`/user-products/{id}/stock`)
+**Critical bug fixed:** `available_quantity` on `/items/{id}` only shows the total quantity available for sale — it does **not** reveal the split between MeLi Full and the seller's own warehouse. A listing with `logistic_type == "fulfillment"` can *simultaneously* have units sitting in the seller's own depósito (not yet sent to Full) that don't show up anywhere in the old calc (`stock_deposito` was computed as `available_quantity` of non-Full listings only — always 0 for pure-Full products). Real example: "Alarma Detector De Monóxido" showed 0 depósito while the seller had 496 units sitting in their own warehouse.
+
+**Fix:** this seller is migrated to MeLi's **User Products / Multi-Origin Stock** model (confirmed via the `user_product_seller` tag and `MLAU...` ids — note: `MLAU...` in a product URL's `/up/` segment is a `user_product_id`, NOT an `item_id`; hitting `/items/{MLAU...}` 404s). Each item has a `user_product_id` field (added to `get_my_store_items()`'s attrs). `get_user_product_stock(user_product_id)` in `meli_api.py` calls `GET /user-products/{id}/stock`, which returns `locations: [{type, quantity}, ...]` — real-world `type` values seen: `"meli_facility"` (Full) and `"selling_address"` (seller's own depósito; treat anything that isn't `meli_facility` as depósito, don't hardcode the exact non-Full type name).
+
+`_compute_group_stock(its, full_stock, up_stock)` in `app.py` is the single shared helper (used by both "mis productos" and "Potencia tus Ventas" — they had duplicated the buggy inline calc before): prioritizes the Multi-Origin per-`user_product_id` stock when available, falls back to the old `available_quantity` + `logistic_type` + `get_fulfillment_stock` scheme for items without a `user_product_id` or where the call fails.
+
+**Debugging technique used (worth repeating):** added a temporary `@login_required` debug route (e.g. `/api/debug-stock?item_id=...`) that dumps raw MeLi API responses, deployed it, then called it from an already-authenticated browser tab (the session cookie carries over — no need for the user's password) via `javascript_tool`/`get_page_text`. Removed the route once the field names were confirmed. Same technique was used earlier to find the IVA attribute name.
+
+---
+
+### ⚠️ Gotcha: all Claude calls in this app MUST stream
+`/api/potencia-analyze` was initially written as a plain blocking `client.messages.create()` (like the very old `my_store_analyze`) instead of `client.messages.stream()` + keep-alive `yield " "` chunks (the pattern every other analyze endpoint uses — `mis_productos_estrategia`, `buscomp_analyze`, `nicho_analyze`, `sourcing_analyze`). With a big catalog + longer prompt, Claude took long enough that Railway's proxy dropped the connection mid-response; the frontend received the literal text `"upstream error"` and crashed trying `JSON.parse()` it. **Any new `POST /api/*-analyze` endpoint must use the streaming+keep-alive pattern** (see any of the endpoints above for the exact shape) — never `client.messages.create()` directly in a request handler.
+
+### ⚠️ Gotcha: `overflow-x: auto` breaks `position: sticky`
+`potencia_ventas.html`'s table was wrapped in a `<div style="overflow-x:auto">` for horizontal scroll on narrow screens. Per the CSS overflow spec, setting only `overflow-x` forces the browser to compute `overflow-y: auto` too, turning that div into its own scroll container — which detaches `position: sticky` (on the `<thead>`) from the *page's* scroll, causing the sticky header to render in the wrong place (a sliver of the first row peeking out between the page header and the table header while scrolling). Fix: don't wrap standalone-report tables in an `overflow-x` div unless you also handle sticky positioning relative to that div specifically. `mis_productos.html` never had this wrapper and never had the bug.
 
 ---
 
@@ -180,7 +228,7 @@ Needs `NODE_EXTRA_CA_CERTS` env var set if machine has AVG antivirus (SSL interc
 - **Position:** `get_item_position` runs ONE Apify search (`~25s`, keyword stored per product, editable in UI; default = `derive_keyword(title)` first 3 significant tokens). Match own listing by item_id, permalink, seller_id **and catalog_product_id** — catalog listings appear as `/p/MLA...` URLs with the catalog id, not the listing id (this was the original bug: own product at #2 not recognized). Result cached in `product_config` (`position`, `position_total`, `position_ts`, `position_competitors` = top-15 JSON). NEVER runs on page load — only per-row ↻ button or sequential "update all" loop client-side. Changing the keyword invalidates the cache.
 - **AI strategy:** button appears when `sales_30d_units < 0.5 * proyeccion_mes` (computed server-side, `needs_strategy`). `POST /api/mis-productos/estrategia` requires cached `position_competitors` (400 otherwise). Margin is precomputed in Python (`precio_final×0,85 − envío($7.000 si ≥$33k) − landed`) and injected into the prompt so Claude never invents arithmetic. Streaming keep-alive pattern, `claude-sonnet-4-6`, max_tokens=3000. Prompt includes the real top-15 listing with own row marked "→ VOS".
 
-**DB:** table `product_config` (item_ids JSON, landed_cost_ars, proyeccion_mes, keyword, position cache). Created in `init_products_table()`. **`DB_PATH` is now env-configurable** — set `DB_PATH=/data/melichnicho.db` + a Railway volume mounted at `/data` for persistence (without it the container DB is wiped per deploy).
+**DB:** table `product_config` (item_ids JSON, landed_cost_ars, costo_usd, proyeccion_mes, keyword, position cache). Created in `init_products_table()`. `DB_PATH` env var **is configured in Railway** pointing at the mounted volume `melinicho-volume` (confirmed 2026-07-21 in the Railway dashboard — Variables tab + a Volume attached to the `melinicho` service) — the SQLite file persists across deploys, no need to re-enter product costs/config after a push.
 
 **Endpoints:** `GET /mis-productos` (page), `GET /api/mis-productos` (~30s load: items + orders 30d + prices + fulfillment stock), `POST /api/mis-productos/config` (partial update: proyeccion_mes / landed_cost_ars / keyword), `POST /api/mis-productos/position`, `POST /api/mis-productos/merge`, `POST /api/mis-productos/estrategia` (streaming).
 
