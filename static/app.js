@@ -250,7 +250,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // ─── Sales Dashboard ──────────────────────────────────────
 
-async function loadSalesSummary() {
+async function loadSalesSummary(btn) {
+    if (btn) { btn.disabled = true; btn.classList.add('spinning'); }
     try {
         const resp = await fetch('/api/sales-summary');
         if (!resp.ok) return;
@@ -263,7 +264,10 @@ async function loadSalesSummary() {
         document.getElementById('month-amount').textContent = fmtPrice(data.month.amount);
         document.getElementById('month-orders').textContent =
             `${data.month.orders} orden${data.month.orders !== 1 ? 'es' : ''} en el mes`;
-    } catch (_) {}
+    } catch (_) {
+    } finally {
+        if (btn) { btn.disabled = false; btn.classList.remove('spinning'); }
+    }
 }
 
 // ─── Categories ───────────────────────────────────────────

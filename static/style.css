@@ -750,9 +750,39 @@ main {
 
 /* ─── Sales dashboard ────────────────────────────────── */
 .sales-dashboard {
+    position: relative;
     display: flex;
     gap: 1rem;
     margin-bottom: 1.5rem;
+}
+
+.sales-refresh-btn {
+    position: absolute;
+    top: .5rem;
+    right: .5rem;
+    z-index: 1;
+    width: 26px;
+    height: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--border);
+    border-radius: 50%;
+    background: var(--surface);
+    color: var(--muted);
+    font-size: .95rem;
+    line-height: 1;
+    cursor: pointer;
+    transition: background .15s ease, color .15s ease;
+}
+.sales-refresh-btn:hover  { background: var(--accent); color: #fff; border-color: var(--accent); }
+.sales-refresh-btn:disabled { cursor: default; opacity: .6; }
+.sales-refresh-btn.spinning { animation: sales-refresh-spin .7s linear infinite; }
+@media (prefers-reduced-motion: reduce) {
+    .sales-refresh-btn.spinning { animation: none; }
+}
+@keyframes sales-refresh-spin {
+    to { transform: rotate(360deg); }
 }
 
 .sales-card {
