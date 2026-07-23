@@ -750,7 +750,6 @@ main {
 
 /* ─── Sales dashboard ────────────────────────────────── */
 .sales-dashboard {
-    position: relative;
     display: flex;
     gap: 1rem;
     margin-bottom: 1.5rem;
@@ -786,6 +785,7 @@ main {
 }
 
 .sales-card {
+    position: relative;
     flex: 1;
     background: var(--surface);
     border: 1px solid var(--border);
