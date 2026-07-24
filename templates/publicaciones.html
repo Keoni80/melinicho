@@ -73,10 +73,16 @@
   .prod-badges { display: flex; gap: .3rem; margin-top: .25rem; flex-wrap: wrap; }
 
   .badge { border-radius: 5px; padding: .05rem .4rem; font-size: .7rem; font-weight: 700; white-space: nowrap; }
-  .badge-full    { background: rgba(0,172,193,.15); color: var(--cyan); }
   .badge-envio   { background: rgba(76,175,80,.15); color: var(--green); }
   .badge-intl    { background: rgba(255,152,0,.15); color: var(--orange); }
   .badge-oficial { background: rgba(255,230,0,.15); color: var(--accent); }
+
+  .full-yes { color: var(--cyan); font-weight: 700; white-space: nowrap; }
+  .full-no  { color: var(--muted); white-space: nowrap; }
+
+  thead th.sortable { cursor: pointer; user-select: none; }
+  thead th.sortable:hover { color: var(--text); }
+  .sort-arrow { color: var(--accent); }
 
   .price-final { color: var(--accent); font-weight: 700; font-size: .95rem; }
   .price-old { color: var(--muted); text-decoration: line-through; font-size: .76rem; display: block; }
@@ -139,10 +145,13 @@ function switchView(view) {
 function badgesHtml(it) {
   let b = '';
   if (it.official_store) b += '<span class="badge badge-oficial">Tienda oficial</span>';
-  if (it.full) b += '<span class="badge badge-full">Full</span>';
-  else if (it.free_shipping) b += '<span class="badge badge-envio">Envío gratis</span>';
+  if (it.free_shipping) b += '<span class="badge badge-envio">Envío gratis</span>';
   if (it.international_purchase) b += '<span class="badge badge-intl">Compra internacional</span>';
   return b;
+}
+
+function fullHtml(it) {
+  return it.full ? '<span class="full-yes">✓ Full</span>' : '<span class="full-no">— No Full</span>';
 }
 
 // ─── Buscar ──────────────────────────────────────────────
@@ -184,16 +193,37 @@ async function buscarPublicaciones() {
   }
 }
 
+let buscarItems = [];
+let buscarKeyword = '';
+let priceSortDir = null; // null = orden original de MercadoLibre, 1 = asc, -1 = desc
+
 function renderBuscarResults(items, keyword) {
+  buscarItems = items;
+  buscarKeyword = keyword;
+  priceSortDir = null;
+  renderBuscarTable();
+}
+
+function sortBuscarByPrice() {
+  priceSortDir = priceSortDir === 1 ? -1 : 1;
+  buscarItems = [...buscarItems].sort((a, b) => (a.price - b.price) * priceSortDir);
+  renderBuscarTable();
+}
+
+function renderBuscarTable() {
   const results = document.getElementById('buscar-results');
-  if (!items.length) {
+  if (!buscarItems.length) {
     document.getElementById('buscar-empty').textContent = 'No se encontraron publicaciones para esa keyword.';
     document.getElementById('buscar-empty').style.display = 'block';
     return;
   }
 
-  let html = '<table><thead><tr><th>Publicación</th><th>Vendedor</th><th class="num">Precio</th><th></th></tr></thead><tbody>';
-  items.forEach((it, i) => {
+  const arrow = priceSortDir === 1 ? '<span class="sort-arrow">▲</span>' : priceSortDir === -1 ? '<span class="sort-arrow">▼</span>' : '';
+  let html = `<table><thead><tr>
+      <th>Publicación</th><th>Vendedor</th><th>Full</th>
+      <th class="num sortable" onclick="sortBuscarByPrice()">Precio ${arrow}</th><th></th>
+    </tr></thead><tbody>`;
+  buscarItems.forEach((it, i) => {
     html += `<tr>
       <td><div class="prod-cell">
         <img src="${it.thumbnail}" onerror="this.style.visibility='hidden'">
@@ -203,6 +233,7 @@ function renderBuscarResults(items, keyword) {
         </div>
       </div></td>
       <td>${it.seller_name || '—'}</td>
+      <td>${fullHtml(it)}</td>
       <td class="num">
         ${it.price_previous && it.price_previous > it.price ? `<span class="price-old">${money(it.price_previous)}</span>` : ''}
         <span class="price-final">${money(it.price)}</span>
@@ -212,15 +243,11 @@ function renderBuscarResults(items, keyword) {
   });
   html += '</tbody></table>';
   results.innerHTML = html;
-  results.dataset.items = JSON.stringify(items);
-  results.dataset.keyword = keyword;
 }
 
 async function seguirPublicacion(idx) {
-  const results = document.getElementById('buscar-results');
-  const items = JSON.parse(results.dataset.items);
-  const keyword = results.dataset.keyword;
-  const it = items[idx];
+  const keyword = buscarKeyword;
+  const it = buscarItems[idx];
   const btn = document.getElementById('seguir-' + idx);
   btn.disabled = true;
   btn.textContent = '…';
@@ -247,6 +274,9 @@ async function seguirPublicacion(idx) {
 
 // ─── Guardadas ───────────────────────────────────────────
 
+let guardadasRows = [];
+let guardadasPriceSortDir = null;
+
 async function cargarGuardadas() {
   const loading = document.getElementById('guardadas-loading');
   const empty = document.getElementById('guardadas-empty');
@@ -264,7 +294,9 @@ async function cargarGuardadas() {
       results.innerHTML = '';
       return;
     }
-    renderGuardadas(rows);
+    guardadasRows = rows;
+    guardadasPriceSortDir = null;
+    renderGuardadas();
   } catch (e) {
     loading.style.display = 'none';
     empty.textContent = 'Error al cargar las publicaciones guardadas.';
@@ -272,10 +304,20 @@ async function cargarGuardadas() {
   }
 }
 
-function renderGuardadas(rows) {
+function sortGuardadasByPrice() {
+  guardadasPriceSortDir = guardadasPriceSortDir === 1 ? -1 : 1;
+  guardadasRows = [...guardadasRows].sort((a, b) => (a.price_last - b.price_last) * guardadasPriceSortDir);
+  renderGuardadas();
+}
+
+function renderGuardadas() {
   const results = document.getElementById('guardadas-results');
-  let html = '<table><thead><tr><th>Publicación</th><th>Vendedor</th><th class="num">Precio</th><th>Estado</th><th></th></tr></thead><tbody>';
-  rows.forEach(r => {
+  const arrow = guardadasPriceSortDir === 1 ? '<span class="sort-arrow">▲</span>' : guardadasPriceSortDir === -1 ? '<span class="sort-arrow">▼</span>' : '';
+  let html = `<table><thead><tr>
+      <th>Publicación</th><th>Vendedor</th><th>Full</th>
+      <th class="num sortable" onclick="sortGuardadasByPrice()">Precio ${arrow}</th><th>Estado</th><th></th>
+    </tr></thead><tbody>`;
+  guardadasRows.forEach(r => {
     let priceChange = '';
     if (r.price_prev != null && r.price_last != null) {
       if (r.price_last < r.price_prev) priceChange = `<span class="price-down">▼ bajó de ${money(r.price_prev)}</span>`;
@@ -292,6 +334,7 @@ function renderGuardadas(rows) {
         </div>
       </div></td>
       <td>${r.seller_name || '—'}</td>
+      <td>${fullHtml(r)}</td>
       <td class="num">
         <span class="price-final">${money(r.price_last)}</span><br>${priceChange}
       </td>
