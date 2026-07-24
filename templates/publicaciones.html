@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>publicaciones — MeLi Nicho</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #1A1A2E; --surface: #16213E; --surface2: #0F3460;
+    --accent: #FFE600; --text: #E0E0E0; --muted: #7A8499;
+    --green: #4CAF50; --red: #F44336; --cyan: #00ACC1; --orange: #FF9800;
+  }
+  body { background: var(--bg); color: var(--text);
+    font-family: 'Segoe UI', system-ui, sans-serif; font-size: 14px; line-height: 1.5; }
+  header { background: var(--surface); border-bottom: 2px solid var(--accent);
+    padding: .9rem 1.5rem; display: flex; align-items: center;
+    justify-content: space-between; gap: 1rem; flex-wrap: wrap;
+    position: sticky; top: 0; z-index: 10; }
+  .logo { font-size: 1.3rem; font-weight: 300; white-space: nowrap; }
+  .logo strong { color: var(--accent); font-weight: 800; }
+
+  .tabs { display: flex; gap: .4rem; }
+  .tab { border: 1px solid var(--surface2); background: var(--surface2); color: var(--muted);
+    border-radius: 8px; padding: .5rem 1rem; font-size: .85rem; font-weight: 700; cursor: pointer; }
+  .tab:hover { color: var(--text); }
+  .tab.active { background: var(--accent); color: #1A1A2E; border-color: var(--accent); }
+
+  main { max-width: 1300px; margin: 0 auto; padding: 1.5rem 1rem 4rem; }
+  .view { display: none; }
+  .view.active { display: block; }
+
+  .search-row { display: flex; gap: .6rem; margin-bottom: 1.2rem; }
+  .search-row input { flex: 1; background: var(--surface); border: 1px solid var(--surface2);
+    border-radius: 8px; padding: .7rem 1rem; color: var(--text); font-size: .95rem; outline: none; }
+  .search-row input:focus { border-color: var(--accent); }
+  .btn { border: none; border-radius: 8px; padding: .5rem 1.1rem; font-size: .85rem;
+    font-weight: 700; cursor: pointer; background: var(--surface2); color: var(--text); white-space: nowrap; }
+  .btn:hover { opacity: .85; }
+  .btn:disabled { opacity: .45; cursor: default; }
+  .btn-accent { background: var(--accent); color: #1A1A2E; }
+  .btn-mini { border: none; border-radius: 6px; background: var(--surface2); color: var(--text);
+    padding: .3rem .6rem; font-size: .78rem; cursor: pointer; white-space: nowrap; }
+  .btn-mini:hover { background: var(--cyan); color: #fff; }
+  .btn-mini:disabled { opacity: .5; cursor: default; }
+  .btn-danger:hover { background: var(--red); color: #fff; }
+
+  #error-box, .empty-box { display: none; background: rgba(244,67,54,.12); border: 1px solid var(--red);
+    border-radius: 8px; padding: .8rem 1.2rem; margin-bottom: 1rem; color: #ff9a92; }
+  .empty-box { display: none; background: var(--surface); border: 1px solid var(--surface2); color: var(--muted); }
+
+  .loading { display: none; align-items: center; gap: .6rem; color: var(--muted); padding: 1.5rem 0; }
+  .spinner { width: 22px; height: 22px; border: 3px solid var(--surface2);
+    border-top-color: var(--accent); border-radius: 50%; animation: spin 1s linear infinite; flex-shrink: 0; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+  thead th { background: var(--surface2); color: var(--muted); font-size: .72rem;
+    text-transform: uppercase; letter-spacing: .04em; padding: .55rem .6rem; text-align: left; }
+  thead th.num { text-align: right; }
+  td { padding: .6rem .6rem; border-bottom: 1px solid var(--surface2); vertical-align: middle; }
+  td.num { text-align: right; white-space: nowrap; }
+  tr:hover td { background: rgba(15,52,96,.35); }
+
+  .prod-cell { display: flex; align-items: center; gap: .6rem; min-width: 260px; }
+  .prod-cell img { width: 44px; height: 44px; border-radius: 6px; object-fit: cover;
+    background: var(--surface2); flex-shrink: 0; }
+  .prod-info { min-width: 0; }
+  .prod-title { color: var(--text); font-weight: 600; text-decoration: none; display: block;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 360px; }
+  .prod-title:hover { color: var(--accent); }
+  .prod-badges { display: flex; gap: .3rem; margin-top: .25rem; flex-wrap: wrap; }
+
+  .badge { border-radius: 5px; padding: .05rem .4rem; font-size: .7rem; font-weight: 700; white-space: nowrap; }
+  .badge-full    { background: rgba(0,172,193,.15); color: var(--cyan); }
+  .badge-envio   { background: rgba(76,175,80,.15); color: var(--green); }
+  .badge-intl    { background: rgba(255,152,0,.15); color: var(--orange); }
+  .badge-oficial { background: rgba(255,230,0,.15); color: var(--accent); }
+
+  .price-final { color: var(--accent); font-weight: 700; font-size: .95rem; }
+  .price-old { color: var(--muted); text-decoration: line-through; font-size: .76rem; display: block; }
+  .price-up   { color: var(--red); font-size: .76rem; }
+  .price-down { color: var(--green); font-size: .76rem; }
+  .price-flat { color: var(--muted); font-size: .76rem; }
+
+  .status-pill { border-radius: 20px; padding: .15rem .55rem; font-size: .72rem; font-weight: 700; }
+  .status-activa { background: rgba(76,175,80,.15); color: var(--green); }
+  .status-no_encontrada { background: rgba(244,67,54,.15); color: var(--red); }
+
+  .checked-sub { font-size: .72rem; color: var(--muted); }
+  .actions-cell { display: flex; gap: .4rem; }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">📋 <strong>Publicaciones</strong></div>
+  <div class="tabs">
+    <button class="tab" id="tab-buscar" onclick="switchView('buscar')">🔎 Buscar publicaciones</button>
+    <button class="tab" id="tab-guardadas" onclick="switchView('guardadas')">⭐ Publicaciones guardadas</button>
+  </div>
+</header>
+<main>
+
+  <div id="view-buscar" class="view">
+    <div class="search-row">
+      <input type="text" id="keyword-input" placeholder="Ej: alarma de monoxido de carbono"
+             onkeydown="if(event.key==='Enter') buscarPublicaciones()">
+      <button class="btn btn-accent" onclick="buscarPublicaciones()">Buscar</button>
+    </div>
+    <div id="buscar-error" class="empty-box"></div>
+    <div id="buscar-loading" class="loading"><div class="spinner"></div>
+      <span>Buscando en MercadoLibre… puede tardar 20-30 segundos</span></div>
+    <div id="buscar-empty" class="empty-box">Todavía no buscaste nada. Escribí una keyword arriba.</div>
+    <div id="buscar-results"></div>
+  </div>
+
+  <div id="view-guardadas" class="view">
+    <div id="guardadas-loading" class="loading" style="display:flex"><div class="spinner"></div>
+      <span>Cargando publicaciones guardadas…</span></div>
+    <div id="guardadas-empty" class="empty-box">Todavía no seguís ninguna publicación. Buscá una y tocá "Seguir".</div>
+    <div id="guardadas-results"></div>
+  </div>
+
+</main>
+
+<script>
+const money = n => n == null ? '—' : '$' + Math.round(n).toLocaleString('es-AR');
+
+function switchView(view) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.getElementById('tab-' + view).classList.add('active');
+  document.getElementById('view-' + view).classList.add('active');
+  history.replaceState(null, '', '/publicaciones?view=' + view);
+  if (view === 'guardadas') cargarGuardadas();
+}
+
+function badgesHtml(it) {
+  let b = '';
+  if (it.official_store) b += '<span class="badge badge-oficial">Tienda oficial</span>';
+  if (it.full) b += '<span class="badge badge-full">Full</span>';
+  else if (it.free_shipping) b += '<span class="badge badge-envio">Envío gratis</span>';
+  if (it.international_purchase) b += '<span class="badge badge-intl">Compra internacional</span>';
+  return b;
+}
+
+// ─── Buscar ──────────────────────────────────────────────
+
+async function buscarPublicaciones() {
+  const keyword = document.getElementById('keyword-input').value.trim();
+  if (!keyword) return;
+
+  const errBox = document.getElementById('buscar-error');
+  const loading = document.getElementById('buscar-loading');
+  const empty = document.getElementById('buscar-empty');
+  const results = document.getElementById('buscar-results');
+
+  errBox.style.display = 'none';
+  empty.style.display = 'none';
+  results.innerHTML = '';
+  loading.style.display = 'flex';
+
+  try {
+    const resp = await fetch('/api/publicaciones/buscar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ keyword }),
+    });
+    const data = await resp.json();
+    loading.style.display = 'none';
+
+    if (!resp.ok) {
+      errBox.textContent = data.error || 'Error al buscar.';
+      errBox.style.display = 'block';
+      return;
+    }
+
+    renderBuscarResults(data.items, keyword);
+  } catch (e) {
+    loading.style.display = 'none';
+    errBox.textContent = 'Error de red al buscar.';
+    errBox.style.display = 'block';
+  }
+}
+
+function renderBuscarResults(items, keyword) {
+  const results = document.getElementById('buscar-results');
+  if (!items.length) {
+    document.getElementById('buscar-empty').textContent = 'No se encontraron publicaciones para esa keyword.';
+    document.getElementById('buscar-empty').style.display = 'block';
+    return;
+  }
+
+  let html = '<table><thead><tr><th>Publicación</th><th>Vendedor</th><th class="num">Precio</th><th></th></tr></thead><tbody>';
+  items.forEach((it, i) => {
+    html += `<tr>
+      <td><div class="prod-cell">
+        <img src="${it.thumbnail}" onerror="this.style.visibility='hidden'">
+        <div class="prod-info">
+          <a class="prod-title" href="${it.permalink}" target="_blank">${it.title}</a>
+          <div class="prod-badges">${badgesHtml(it)}</div>
+        </div>
+      </div></td>
+      <td>${it.seller_name || '—'}</td>
+      <td class="num">
+        ${it.price_previous && it.price_previous > it.price ? `<span class="price-old">${money(it.price_previous)}</span>` : ''}
+        <span class="price-final">${money(it.price)}</span>
+      </td>
+      <td><button class="btn-mini" id="seguir-${i}" onclick='seguirPublicacion(${i})'>☆ Seguir</button></td>
+    </tr>`;
+  });
+  html += '</tbody></table>';
+  results.innerHTML = html;
+  results.dataset.items = JSON.stringify(items);
+  results.dataset.keyword = keyword;
+}
+
+async function seguirPublicacion(idx) {
+  const results = document.getElementById('buscar-results');
+  const items = JSON.parse(results.dataset.items);
+  const keyword = results.dataset.keyword;
+  const it = items[idx];
+  const btn = document.getElementById('seguir-' + idx);
+  btn.disabled = true;
+  btn.textContent = '…';
+
+  try {
+    const resp = await fetch('/api/publicaciones/seguir', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sku: it.sku, is_catalog: it.is_catalog, title: it.title, keyword,
+        thumbnail: it.thumbnail, permalink: it.permalink, seller_name: it.seller_name,
+        price: it.price, free_shipping: it.free_shipping, full: it.full,
+        international_purchase: it.international_purchase, official_store: it.official_store,
+      }),
+    });
+    if (!resp.ok) throw new Error();
+    btn.textContent = '✓ Siguiendo';
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = '☆ Seguir';
+    alert('No se pudo guardar la publicación.');
+  }
+}
+
+// ─── Guardadas ───────────────────────────────────────────
+
+async function cargarGuardadas() {
+  const loading = document.getElementById('guardadas-loading');
+  const empty = document.getElementById('guardadas-empty');
+  const results = document.getElementById('guardadas-results');
+  empty.style.display = 'none';
+  loading.style.display = 'flex';
+
+  try {
+    const resp = await fetch('/api/publicaciones/guardadas');
+    const rows = await resp.json();
+    loading.style.display = 'none';
+
+    if (!rows.length) {
+      empty.style.display = 'block';
+      results.innerHTML = '';
+      return;
+    }
+    renderGuardadas(rows);
+  } catch (e) {
+    loading.style.display = 'none';
+    empty.textContent = 'Error al cargar las publicaciones guardadas.';
+    empty.style.display = 'block';
+  }
+}
+
+function renderGuardadas(rows) {
+  const results = document.getElementById('guardadas-results');
+  let html = '<table><thead><tr><th>Publicación</th><th>Vendedor</th><th class="num">Precio</th><th>Estado</th><th></th></tr></thead><tbody>';
+  rows.forEach(r => {
+    let priceChange = '';
+    if (r.price_prev != null && r.price_last != null) {
+      if (r.price_last < r.price_prev) priceChange = `<span class="price-down">▼ bajó de ${money(r.price_prev)}</span>`;
+      else if (r.price_last > r.price_prev) priceChange = `<span class="price-up">▲ subió de ${money(r.price_prev)}</span>`;
+      else priceChange = `<span class="price-flat">sin cambios</span>`;
+    }
+    const checkedTxt = r.last_checked_at ? new Date(r.last_checked_at + 'Z').toLocaleString('es-AR') : 'nunca';
+    html += `<tr>
+      <td><div class="prod-cell">
+        <img src="${r.thumbnail || ''}" onerror="this.style.visibility='hidden'">
+        <div class="prod-info">
+          <a class="prod-title" href="${r.permalink || '#'}" target="_blank">${r.title || r.sku}</a>
+          <div class="prod-badges">${badgesHtml({official_store:r.official_store, full:r.full, free_shipping:r.free_shipping, international_purchase:r.international_purchase})}</div>
+        </div>
+      </div></td>
+      <td>${r.seller_name || '—'}</td>
+      <td class="num">
+        <span class="price-final">${money(r.price_last)}</span><br>${priceChange}
+      </td>
+      <td>
+        <span class="status-pill status-${r.status}">${r.status === 'activa' ? 'Activa' : 'No encontrada'}</span>
+        <div class="checked-sub">${checkedTxt}</div>
+      </td>
+      <td class="actions-cell">
+        <button class="btn-mini" onclick="chequearPublicacion(${r.id}, this)">↻ Chequear</button>
+        <button class="btn-mini btn-danger" onclick="dejarDeSeguir(${r.id})">✕</button>
+      </td>
+    </tr>`;
+  });
+  html += '</tbody></table>';
+  results.innerHTML = html;
+}
+
+async function chequearPublicacion(id, btn) {
+  btn.disabled = true;
+  const original = btn.textContent;
+  btn.textContent = '…';
+  try {
+    await fetch('/api/publicaciones/chequear', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    });
+    await cargarGuardadas();
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = original;
+    alert('No se pudo chequear el precio.');
+  }
+}
+
+async function dejarDeSeguir(id) {
+  if (!confirm('¿Dejar de seguir esta publicación?')) return;
+  await fetch('/api/publicaciones/dejar-seguir', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id }),
+  });
+  cargarGuardadas();
+}
+
+// ─── Init ────────────────────────────────────────────────
+
+(function init() {
+  const params = new URLSearchParams(location.search);
+  const view = params.get('view') === 'guardadas' ? 'guardadas' : 'buscar';
+  switchView(view);
+})();
+</script>
+</body>
+</html>

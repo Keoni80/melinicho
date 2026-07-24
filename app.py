@@ -18,8 +18,9 @@ from functools import wraps
 from analyzer import analyze_niche
 from meli_api import (
     derive_keyword, fetch_orders_total, fetch_sales_by_item, get_categories,
-    get_fulfillment_stock, get_item_position, get_items_catalog_ids, get_items_prices,
-    get_my_store_items, get_my_user_id, get_subcategories, get_user_product_stock, sample_subcategory, search_meli,
+    get_catalog_item_price, get_catalog_listings, get_fulfillment_stock, get_item_position,
+    get_items_catalog_ids, get_items_prices, get_my_store_items, get_my_user_id, get_subcategories,
+    get_user_product_stock, sample_subcategory, search_meli, search_publicaciones,
 )
 
 app = Flask(__name__)
@@ -106,9 +107,45 @@ def init_products_table():
             conn.execute("ALTER TABLE product_config ADD COLUMN costo_usd REAL")
 
 
+def init_publicaciones_table():
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS followed_publicaciones (
+                id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+                sku                     TEXT NOT NULL,
+                is_catalog              INTEGER DEFAULT 0,
+                resolved_item_id        TEXT,
+                seller_id               TEXT,
+                seller_name             TEXT,
+                title                   TEXT,
+                keyword                 TEXT,
+                thumbnail               TEXT,
+                permalink               TEXT,
+                price_first             REAL,
+                price_last              REAL,
+                price_prev              REAL,
+                free_shipping           INTEGER,
+                full                    INTEGER,
+                international_purchase  INTEGER,
+                official_store          INTEGER,
+                status                  TEXT DEFAULT 'activa',
+                last_checked_at         DATETIME,
+                created_at              DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE IF NOT EXISTS publicacion_price_log (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                followed_id   INTEGER NOT NULL,
+                price         REAL,
+                checked_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (followed_id) REFERENCES followed_publicaciones(id)
+            );
+        """)
+
+
 init_db()
 init_users_table()
 init_products_table()
+init_publicaciones_table()
 
 
 def login_required(f):
@@ -2060,6 +2097,161 @@ def potencia_analyze():
         mimetype="application/json",
         headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
     )
+
+
+@app.route("/publicaciones")
+@login_required
+def publicaciones_page():
+    return render_template("publicaciones.html")
+
+
+@app.route("/api/publicaciones/buscar", methods=["POST"])
+@login_required
+def publicaciones_buscar():
+    data = request.get_json() or {}
+    keyword = (data.get("keyword") or "").strip()
+    if not keyword:
+        return jsonify({"error": "Escribí una keyword para buscar."}), 400
+
+    items = search_publicaciones(keyword)
+    if not items:
+        return jsonify({"error": "No se encontraron resultados (o falló el scraper). Probá de nuevo."}), 502
+
+    results = [{
+        "sku": it["id"],
+        "title": it["title"],
+        "price": it["price"],
+        "price_previous": it.get("price_previous"),
+        "seller_name": it.get("seller_name") or "",
+        "official_store": bool(it.get("official_store")),
+        "free_shipping": bool(it.get("free_shipping")),
+        "full": bool(it.get("full")),
+        "international_purchase": bool(it.get("international_purchase")),
+        "thumbnail": it.get("thumbnail") or "",
+        "permalink": it.get("permalink") or "",
+        "is_catalog": bool(it.get("_is_catalog")),
+    } for it in items]
+
+    return jsonify({"keyword": keyword, "items": results})
+
+
+@app.route("/api/publicaciones/seguir", methods=["POST"])
+@login_required
+def publicaciones_seguir():
+    data = request.get_json() or {}
+    sku = (data.get("sku") or "").strip()
+    if not sku:
+        return jsonify({"error": "Falta el SKU de la publicación."}), 400
+
+    is_catalog = bool(data.get("is_catalog"))
+    price = data.get("price")
+    resolved_item_id, seller_id = None, None
+
+    if is_catalog:
+        listings = get_catalog_listings(sku, price_hint=price)
+        if listings:
+            resolved_item_id = listings[0]["item_id"]
+            seller_id = listings[0]["seller_id"]
+
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        cur = conn.execute(
+            """INSERT INTO followed_publicaciones
+               (sku, is_catalog, resolved_item_id, seller_id, seller_name, title, keyword,
+                thumbnail, permalink, price_first, price_last, free_shipping, full,
+                international_purchase, official_store, last_checked_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)""",
+            (
+                sku, int(is_catalog), resolved_item_id, seller_id,
+                data.get("seller_name") or "", data.get("title") or "", data.get("keyword") or "",
+                data.get("thumbnail") or "", data.get("permalink") or "",
+                price, price,
+                int(bool(data.get("free_shipping"))), int(bool(data.get("full"))),
+                int(bool(data.get("international_purchase"))), int(bool(data.get("official_store"))),
+            ),
+        )
+        followed_id = cur.lastrowid
+        if price is not None:
+            conn.execute(
+                "INSERT INTO publicacion_price_log (followed_id, price) VALUES (?, ?)",
+                (followed_id, price),
+            )
+        row = conn.execute("SELECT * FROM followed_publicaciones WHERE id = ?", (followed_id,)).fetchone()
+
+    return jsonify(dict(row))
+
+
+@app.route("/api/publicaciones/guardadas")
+@login_required
+def publicaciones_guardadas():
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT * FROM followed_publicaciones ORDER BY created_at DESC"
+        ).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/publicaciones/dejar-seguir", methods=["POST"])
+@login_required
+def publicaciones_dejar_seguir():
+    data = request.get_json() or {}
+    followed_id = data.get("id")
+    if not followed_id:
+        return jsonify({"error": "Falta el id."}), 400
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("DELETE FROM publicacion_price_log WHERE followed_id = ?", (followed_id,))
+        conn.execute("DELETE FROM followed_publicaciones WHERE id = ?", (followed_id,))
+    return jsonify({"ok": True})
+
+
+@app.route("/api/publicaciones/chequear", methods=["POST"])
+@login_required
+def publicaciones_chequear():
+    data = request.get_json() or {}
+    followed_id = data.get("id")
+    if not followed_id:
+        return jsonify({"error": "Falta el id."}), 400
+
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT * FROM followed_publicaciones WHERE id = ?", (followed_id,)).fetchone()
+        if not row:
+            return jsonify({"error": "No encontrada."}), 404
+        row = dict(row)
+
+        new_price = None
+        if row["is_catalog"] and row["resolved_item_id"]:
+            new_price = get_catalog_item_price(row["sku"], row["resolved_item_id"])
+        elif row["keyword"]:
+            items = search_publicaciones(row["keyword"])
+            match = next((it for it in items if it["id"] == row["sku"]), None)
+            if match:
+                new_price = match["price"]
+
+        status = "activa" if new_price is not None else "no_encontrada"
+
+        if new_price is not None:
+            conn.execute(
+                """UPDATE followed_publicaciones
+                   SET price_prev = price_last, price_last = ?, status = ?, last_checked_at = CURRENT_TIMESTAMP
+                   WHERE id = ?""",
+                (new_price, status, followed_id),
+            )
+            conn.execute(
+                "INSERT INTO publicacion_price_log (followed_id, price) VALUES (?, ?)",
+                (followed_id, new_price),
+            )
+        else:
+            conn.execute(
+                "UPDATE followed_publicaciones SET status = ?, last_checked_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (status, followed_id),
+            )
+
+        conn.row_factory = sqlite3.Row
+        updated = conn.execute("SELECT * FROM followed_publicaciones WHERE id = ?", (followed_id,)).fetchone()
+
+    return jsonify(dict(updated))
 
 
 if __name__ == "__main__":

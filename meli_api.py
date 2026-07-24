@@ -199,10 +199,17 @@ def _search_apify(query="", category_id="", max_results=100):
         raw_id = r.get("SKU", "")
         is_catalog = bool(re.search(r'/p/MLA', url))
 
+        prev_price_str = r.get("precioAnterior", "") or ""
+        try:
+            price_previous = float(str(prev_price_str).replace(".", "").replace(",", ".")) or None
+        except (ValueError, TypeError):
+            price_previous = None
+
         items.append({
             "id": raw_id,
             "title": r.get("articuloTitulo", ""),
             "price": price,
+            "price_previous": price_previous,
             "currency": r.get("Moneda", "ARS"),
             "sold_quantity": 0,
             "available_quantity": 0,
@@ -211,6 +218,9 @@ def _search_apify(query="", category_id="", max_results=100):
             "seller_name": r.get("Vendedor", "") or r.get("productoMarca", ""),
             "seller_level": "",
             "free_shipping": "gratis" in envio or "free" in envio or "full" in envio,
+            "full": "full_icon" in envio,
+            "official_store": bool(r.get("esTiendaOficial")),
+            "international_purchase": bool(r.get("esCompraIternacional")),
             "permalink": url,
             "thumbnail": r.get("imgDireccion", ""),
             "listing_type": "catalog" if is_catalog else "",
@@ -244,6 +254,60 @@ def _resolve_catalog_to_listing(product_id):
     except Exception as e:
         log.warning("catalog resolve failed for %s: %s", product_id, e)
     return None, 0
+
+
+def get_catalog_listings(product_id, price_hint=None):
+    """Listings (item_id, seller_id, price) activos bajo un producto de catálogo.
+
+    Vía /products/{id}/items — API oficial, NO bloqueada (a diferencia de
+    /sites/MLA/search e /items/{id}). Con price_hint, ordena por cercanía a
+    ese precio para anclar una publicación recién vista en una búsqueda al
+    listing real correcto entre varios vendedores del mismo catálogo.
+    """
+    try:
+        resp = _get(
+            f"{BASE_URL}/products/{product_id}/items",
+            params={"limit": 20, "status": "active"},
+            timeout=8,
+        )
+        if not resp.ok:
+            return []
+        results = resp.json().get("results", [])
+        listings = [
+            {
+                "item_id": r.get("item_id"),
+                "seller_id": r.get("seller_id"),
+                "price": r.get("price"),
+            }
+            for r in results
+        ]
+        if price_hint is not None:
+            listings.sort(key=lambda x: abs((x["price"] or 0) - price_hint))
+        return listings
+    except Exception as e:
+        log.warning("get_catalog_listings failed for %s: %s", product_id, e)
+        return []
+
+
+def get_catalog_item_price(product_id, item_id):
+    """Precio actual de un listing puntual bajo un producto de catálogo.
+
+    None si el listing ya no aparece activo (posible pausa/baja de stock).
+    """
+    for listing in get_catalog_listings(product_id):
+        if listing["item_id"] == item_id:
+            return listing["price"]
+    return None
+
+
+def search_publicaciones(keyword, max_results=48):
+    """Búsqueda de publicaciones por keyword para el módulo Publicaciones.
+
+    Va directo a Apify (no intenta /sites/MLA/search primero): esa API está
+    bloqueada para IPs de servidor desde abril 2025, reintentarla solo suma
+    latencia sin chance real de éxito.
+    """
+    return _search_apify(keyword, max_results=max_results) or []
 
 
 def enrich_with_visits(items):
