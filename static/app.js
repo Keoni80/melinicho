@@ -629,12 +629,19 @@ function initSidebar() {
     backdrop.addEventListener('click', closeSidebar);
 
     // Marca el ítem activo y, en móvil, cierra el menú al elegir una sección.
-    // "pub-toggle" es un simple expand/collapse del submenu, no navega a
-    // ningún lado, así que no debe cerrar el sidebar móvil ni marcarse activo.
+    // Los ".nav-toggle" son simples expand/collapse de un submenu, no navegan
+    // a ningún lado, así que no deben cerrar el sidebar móvil ni marcarse activos.
     document.querySelectorAll('.nav-item').forEach(item => {
-        if (item.id === 'pub-toggle') return;
+        if (item.classList.contains('nav-toggle')) return;
         item.addEventListener('click', () => {
-            document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+            document.querySelectorAll('.nav-item, .nav-subitem').forEach(n => n.classList.remove('active'));
+            item.classList.add('active');
+            closeSidebar();
+        });
+    });
+    document.querySelectorAll('.nav-subitem').forEach(item => {
+        item.addEventListener('click', () => {
+            document.querySelectorAll('.nav-item, .nav-subitem').forEach(n => n.classList.remove('active'));
             item.classList.add('active');
             closeSidebar();
         });
@@ -648,23 +655,28 @@ function initSidebar() {
         document.getElementById('keyword-input').focus();
     });
 
-    // "Publicaciones": ítem expandible con dos sub-opciones. Con el sidebar
-    // colapsado (solo íconos) no hay lugar para el submenu, así que el click
-    // en el ícono navega directo a "Buscar publicaciones".
-    document.getElementById('pub-toggle').addEventListener('click', () => {
-        if (shell.classList.contains('collapsed')) {
-            window.open('/publicaciones?view=buscar', '_blank');
-            return;
-        }
-        document.getElementById('pub-wrap').classList.toggle('open');
+    // Ítems expandibles del menú (Importar Datos / Competencia / Publicaciones /
+    // Mi negocio): con el sidebar colapsado (solo íconos) no hay lugar para el
+    // submenu, así que el click primero expande el sidebar entero.
+    [
+        ['import-toggle', 'import-wrap'],
+        ['comp-toggle', 'comp-wrap'],
+        ['pub-toggle', 'pub-wrap'],
+        ['negocio-toggle', 'negocio-wrap'],
+    ].forEach(([toggleId, wrapId]) => {
+        document.getElementById(toggleId).addEventListener('click', () => {
+            if (shell.classList.contains('collapsed')) {
+                shell.classList.remove('collapsed');
+            }
+            document.getElementById(wrapId).classList.toggle('open');
+        });
     });
+
     document.getElementById('pub-buscar-btn').addEventListener('click', () => {
         window.open('/publicaciones?view=buscar', '_blank');
-        closeSidebar();
     });
     document.getElementById('pub-guardadas-btn').addEventListener('click', () => {
         window.open('/publicaciones?view=guardadas', '_blank');
-        closeSidebar();
     });
 }
 

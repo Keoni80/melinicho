@@ -1059,6 +1059,9 @@ main {
 .nav-item--potencia .nav-ico { background: linear-gradient(135deg,#283593,#5C6BC0); }
 .nav-item--sourcing .nav-ico { background: linear-gradient(135deg,#4A148C,#7B1FA2); }
 .nav-item--pub      .nav-ico { background: linear-gradient(135deg,#F57F17,#FBC02D); }
+.nav-item--import      .nav-ico { background: linear-gradient(135deg,#37474F,#78909C); }
+.nav-item--competencia .nav-ico { background: linear-gradient(135deg,#B71C1C,#E53935); }
+.nav-item--negocio     .nav-ico { background: linear-gradient(135deg,#1B5E20,#43A047); }
 
 /* ─── Submenu (ítem de nav expandible) ───────────────── */
 .nav-caret {
@@ -1076,13 +1079,15 @@ main {
     gap: .1rem;
     max-height: 0;
     overflow: hidden;
-    padding-left: 2.5rem;
-    transition: max-height .2s ease;
+    padding-left: 1.4rem;
+    transition: max-height .25s ease;
 }
-.nav-item-wrap.open .nav-submenu { max-height: 100px; }
+.nav-item-wrap.open .nav-submenu { max-height: 260px; }
 
 .nav-subitem {
-    display: block;
+    display: flex;
+    align-items: center;
+    gap: .6rem;
     width: 100%;
     text-align: left;
     background: none;
@@ -1097,6 +1102,7 @@ main {
     font-family: inherit;
     transition: background .15s, color .15s, border-color .15s;
 }
+.nav-subitem .nav-txt { color: inherit; }
 .nav-subitem:hover  { color: var(--text); background: rgba(255,255,255,.04); }
 .nav-subitem.active { color: var(--accent); background: var(--accent-dim); border-left-color: var(--accent); }
 

@@ -32,25 +32,37 @@
         </div>
 
         <div class="nav-group">
-            <span class="nav-group-title">Importar datos</span>
-            <button id="rt-btn" class="nav-item nav-item--rt" title="Subí un XLSX exportado de Real Trends para ver unidades vendidas reales">
-                <span class="nav-ico">📊</span><span class="nav-txt">Real Trends</span>
-            </button>
-            <button id="nubi-btn" class="nav-item nav-item--nubi" title="Analizá una categoría completa desde Nubimetrics">
-                <span class="nav-ico">📈</span><span class="nav-txt">Nubimetrics</span>
-            </button>
+            <div class="nav-item-wrap" id="import-wrap">
+                <button id="import-toggle" class="nav-item nav-toggle nav-item--import" title="Importar datos externos">
+                    <span class="nav-ico">🗂️</span><span class="nav-txt">Importar Datos</span><span class="nav-caret">▾</span>
+                </button>
+                <div class="nav-submenu" id="import-submenu">
+                    <button id="rt-btn" class="nav-subitem" title="Subí un XLSX exportado de Real Trends para ver unidades vendidas reales">
+                        <span class="nav-ico">📊</span><span class="nav-txt">Real Trends</span>
+                    </button>
+                    <button id="nubi-btn" class="nav-subitem" title="Analizá una categoría completa desde Nubimetrics">
+                        <span class="nav-ico">📈</span><span class="nav-txt">Nubimetrics</span>
+                    </button>
+                </div>
+            </div>
         </div>
 
         <div class="nav-group">
-            <span class="nav-group-title">Competencia</span>
-            <button id="comp-btn" class="nav-item nav-item--comp" title="Subí catálogos de vendedores exportados de Nubimetrics y analizá a tus competidores">
-                <span class="nav-ico">⚔️</span><span class="nav-txt">Competidores</span>
-            </button>
-            <button id="buscomp-btn" class="nav-item nav-item--buscomp" title="Subí CSVs de categoría de Nubimetrics y encontrá vendedores con productos estrella traíbles por courier">
-                <span class="nav-ico">🕵️</span><span class="nav-txt">Buscar Competidores</span>
-            </button>
+            <div class="nav-item-wrap" id="comp-wrap">
+                <button id="comp-toggle" class="nav-item nav-toggle nav-item--competencia" title="Competencia">
+                    <span class="nav-ico">⚔️</span><span class="nav-txt">Competencia</span><span class="nav-caret">▾</span>
+                </button>
+                <div class="nav-submenu" id="comp-submenu">
+                    <button id="comp-btn" class="nav-subitem" title="Subí catálogos de vendedores exportados de Nubimetrics y analizá a tus competidores">
+                        <span class="nav-ico">⚔️</span><span class="nav-txt">Competidores</span>
+                    </button>
+                    <button id="buscomp-btn" class="nav-subitem" title="Subí CSVs de categoría de Nubimetrics y encontrá vendedores con productos estrella traíbles por courier">
+                        <span class="nav-ico">🕵️</span><span class="nav-txt">Buscar Competidores</span>
+                    </button>
+                </div>
+            </div>
             <div class="nav-item-wrap" id="pub-wrap">
-                <button id="pub-toggle" class="nav-item nav-item--pub" title="Buscá publicaciones en MercadoLibre y seguí su precio">
+                <button id="pub-toggle" class="nav-item nav-toggle nav-item--pub" title="Buscá publicaciones en MercadoLibre y seguí su precio">
                     <span class="nav-ico">📋</span><span class="nav-txt">Publicaciones</span><span class="nav-caret">▾</span>
                 </button>
                 <div class="nav-submenu" id="pub-submenu">
@@ -61,19 +73,25 @@
         </div>
 
         <div class="nav-group">
-            <span class="nav-group-title">Mi negocio</span>
-            <button id="store-btn" class="nav-item nav-item--store" title="Ver tus publicaciones activas con ventas reales y recomendaciones de crecimiento">
-                <span class="nav-ico">🏪</span><span class="nav-txt">Mi Tienda</span>
-            </button>
-            <button id="misprod-btn" class="nav-item nav-item--misprod" title="Tus publicaciones activas: stock propio y Full, precio final, ventas 30 días, posicionamiento y estrategia IA">
-                <span class="nav-ico">📦</span><span class="nav-txt">Mis productos</span>
-            </button>
-            <button id="potencia-btn" class="nav-item nav-item--potencia" title="Cruza stock (depósito y Full), ventas y precio de tu catálogo con una meta de facturación mensual para armar una estrategia de descuentos y envíos a Full">
-                <span class="nav-ico">💪</span><span class="nav-txt">Potencia tus Ventas</span>
-            </button>
-            <button id="sourcing-btn" class="nav-item nav-item--sourcing" title="Subí reportes de Nubimetrics y encontrá los mejores productos para importar y vender">
-                <span class="nav-ico">🎯</span><span class="nav-txt">Sourcing</span>
-            </button>
+            <div class="nav-item-wrap" id="negocio-wrap">
+                <button id="negocio-toggle" class="nav-item nav-toggle nav-item--negocio" title="Mi negocio">
+                    <span class="nav-ico">💼</span><span class="nav-txt">Mi negocio</span><span class="nav-caret">▾</span>
+                </button>
+                <div class="nav-submenu" id="negocio-submenu">
+                    <button id="store-btn" class="nav-subitem" title="Ver tus publicaciones activas con ventas reales y recomendaciones de crecimiento">
+                        <span class="nav-ico">🏪</span><span class="nav-txt">Mi Tienda</span>
+                    </button>
+                    <button id="misprod-btn" class="nav-subitem" title="Tus publicaciones activas: stock propio y Full, precio final, ventas 30 días, posicionamiento y estrategia IA">
+                        <span class="nav-ico">📦</span><span class="nav-txt">Mis productos</span>
+                    </button>
+                    <button id="potencia-btn" class="nav-subitem" title="Cruza stock (depósito y Full), ventas y precio de tu catálogo con una meta de facturación mensual para armar una estrategia de descuentos y envíos a Full">
+                        <span class="nav-ico">💪</span><span class="nav-txt">Potencia tus Ventas</span>
+                    </button>
+                    <button id="sourcing-btn" class="nav-subitem" title="Subí reportes de Nubimetrics y encontrá los mejores productos para importar y vender">
+                        <span class="nav-ico">🎯</span><span class="nav-txt">Sourcing</span>
+                    </button>
+                </div>
+            </div>
         </div>
     </nav>
 
